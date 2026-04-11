@@ -1,0 +1,165 @@
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sobel
+Size:   3
+CUDA: GPU execution time (N=3): 0.070720 MS
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sobel
+Size:   4
+CUDA: GPU execution time (N=4): 0.070752 MS
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sobel
+Size:   5
+CUDA: GPU execution time (N=5): 0.087904 MS
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: laplacian
+Size:   3
+CUDA: GPU execution time (N=3): 0.070240 MS
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: laplacian
+Size:   4
+CUDA: GPU execution time (N=4): 0.067936 MS
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: laplacian
+Size:   5
+CUDA: GPU execution time (N=5): 0.099776 MS
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sharpen
+Size:   3
+CUDA: GPU execution time (N=3): 0.070528 MS
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sharpen
+Size:   4
+CUDA: GPU execution time (N=4): 0.075872 MS
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image:  kitten_226p_gray.png
+Filter: sharpen
+Size:   5
+CUDA: GPU execution time (N=5): 0.109472 MS
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sobel
+Size:   3
+CUDA: GPU execution time (N=3): 0.080288 MS
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sobel
+Size:   4
+CUDA: GPU execution time (N=4): 0.081216 MS
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sobel
+Size:   5
+CUDA: GPU execution time (N=5): 0.085024 MS
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: laplacian
+Size:   3
+CUDA: GPU execution time (N=3): 0.079712 MS
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: laplacian
+Size:   4
+CUDA: GPU execution time (N=4): 0.141376 MS
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: laplacian
+Size:   5
+CUDA: GPU execution time (N=5): 0.084320 MS
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sharpen
+Size:   3
+CUDA: GPU execution time (N=3): 0.249664 MS
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sharpen
+Size:   4
+CUDA: GPU execution time (N=4): 0.083840 MS
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image:  kitten_720p_gray.png
+Filter: sharpen
+Size:   5
+CUDA: GPU execution time (N=5): 0.094208 MS
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sobel
+Size:   3
+CUDA: GPU execution time (N=3): 0.145216 MS
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sobel
+Size:   4
+CUDA: GPU execution time (N=4): 0.163040 MS
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sobel
+Size:   5
+CUDA: GPU execution time (N=5): 0.238816 MS
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: laplacian
+Size:   3
+CUDA: GPU execution time (N=3): 0.140800 MS
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: laplacian
+Size:   4
+CUDA: GPU execution time (N=4): 0.162784 MS
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: laplacian
+Size:   5
+CUDA: GPU execution time (N=5): 0.209728 MS
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sharpen
+Size:   3
+CUDA: GPU execution time (N=3): 0.140576 MS
+Saved processed image to kitten_2160p_gray_sharpen.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sharpen
+Size:   4
+CUDA: GPU execution time (N=4): 0.161472 MS
+Saved processed image to kitten_2160p_gray_sharpen.png
+------------------------------------
+Image:  kitten_2160p_gray.jpg
+Filter: sharpen
+Size:   5
+CUDA: GPU execution time (N=5): 0.210464 MS
+Saved processed image to kitten_2160p_gray_sharpen.png
+
+Benchmarking Complete
+請按任意鍵繼續 . . . 

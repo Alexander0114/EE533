@@ -1,0 +1,144 @@
+////////////////////////////////////////////////////////////////////////////////
+// Copyright (c) 1995-2008 Xilinx, Inc.  All rights reserved.
+////////////////////////////////////////////////////////////////////////////////
+//   ____  ____ 
+//  /   /\/   / 
+// /___/  \  /    Vendor: Xilinx 
+// \   \   \/     Version : 10.1
+//  \   \         Application : sch2verilog
+//  /   /         Filename : worldmatch.vf
+// /___/   /\     Timestamp : 01/29/2026 21:13:13
+// \   \  /  \ 
+//  \___\/\___\ 
+//
+//Command: C:\Xilinx\10.1\ISE\bin\nt\unwrapped\sch2verilog.exe -intstyle ise -family virtex2p -w "C:/Documents and Settings/student/Desktop/labs/lab3/min_IDS_sim/mini_IDS/worldmatch.sch" worldmatch.vf
+//Design Name: worldmatch
+//Device: virtex2p
+//Purpose:
+//    This verilog netlist is translated from an ECS schematic.It can be 
+//    synthesized and simulated, but it should not be modified. 
+//
+`timescale 1ns / 1ps
+
+module OR8_MXILINX_worldmatch(I0, 
+                              I1, 
+                              I2, 
+                              I3, 
+                              I4, 
+                              I5, 
+                              I6, 
+                              I7, 
+                              O);
+
+    input I0;
+    input I1;
+    input I2;
+    input I3;
+    input I4;
+    input I5;
+    input I6;
+    input I7;
+   output O;
+   
+   wire dummy;
+   wire S0;
+   wire S1;
+   wire O_DUMMY;
+   
+   assign O = O_DUMMY;
+   FMAP I_36_91 (.I1(S0), 
+                 .I2(S1), 
+                 .I3(dummy), 
+                 .I4(dummy), 
+                 .O(O_DUMMY));
+   // synthesis attribute RLOC of I_36_91 is "X0Y1"
+   OR2 I_36_94 (.I0(S0), 
+                .I1(S1), 
+                .O(O_DUMMY));
+   OR4 I_36_95 (.I0(I4), 
+                .I1(I5), 
+                .I2(I6), 
+                .I3(I7), 
+                .O(S1));
+   OR4 I_36_112 (.I0(I0), 
+                 .I1(I1), 
+                 .I2(I2), 
+                 .I3(I3), 
+                 .O(S0));
+   FMAP I_36_116 (.I1(I0), 
+                  .I2(I1), 
+                  .I3(I2), 
+                  .I4(I3), 
+                  .O(S0));
+   // synthesis attribute RLOC of I_36_116 is "X0Y0"
+   FMAP I_36_117 (.I1(I4), 
+                  .I2(I5), 
+                  .I3(I6), 
+                  .I4(I7), 
+                  .O(S1));
+   // synthesis attribute RLOC of I_36_117 is "X0Y0"
+endmodule
+`timescale 1ns / 1ps
+
+module worldmatch(datacomp, 
+                  datain, 
+                  wildcard, 
+                  match);
+
+    input [55:0] datacomp;
+    input [111:0] datain;
+    input [6:0] wildcard;
+   output match;
+   
+   wire XLXN_35;
+   wire XLXN_36;
+   wire XLXN_37;
+   wire XLXN_38;
+   wire XLXN_39;
+   wire XLXN_40;
+   wire XLXN_41;
+   wire XLXN_42;
+   
+   comparator XLXI_1 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[55:0]), 
+                      .match(XLXN_35));
+   comparator XLXI_2 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[63:8]), 
+                      .match(XLXN_36));
+   comparator XLXI_3 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[71:16]), 
+                      .match(XLXN_37));
+   comparator XLXI_4 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[79:24]), 
+                      .match(XLXN_38));
+   comparator XLXI_5 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[87:32]), 
+                      .match(XLXN_39));
+   comparator XLXI_6 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[95:40]), 
+                      .match(XLXN_40));
+   comparator XLXI_7 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[103:48]), 
+                      .match(XLXN_41));
+   comparator XLXI_8 (.a(datacomp[55:0]), 
+                      .amask(wildcard[6:0]), 
+                      .b(datain[111:56]), 
+                      .match(XLXN_42));
+   OR8_MXILINX_worldmatch XLXI_17 (.I0(XLXN_42), 
+                                   .I1(XLXN_41), 
+                                   .I2(XLXN_40), 
+                                   .I3(XLXN_39), 
+                                   .I4(XLXN_38), 
+                                   .I5(XLXN_37), 
+                                   .I6(XLXN_36), 
+                                   .I7(XLXN_35), 
+                                   .O(match));
+   // synthesis attribute HU_SET of XLXI_17 is "XLXI_17_0"
+endmodule
