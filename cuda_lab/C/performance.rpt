@@ -1,0 +1,162 @@
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sobel
+Running filter size 3
+CPU execution time: 0.003395 seconds
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sobel
+Running filter size 4
+CPU execution time: 0.003754 seconds
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sobel
+Running filter size 5
+CPU execution time: 0.006034 seconds
+Saved processed image to kitten_226p_gray_sobel.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: laplacian
+Running filter size 3
+CPU execution time: 0.002912 seconds
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: laplacian
+Running filter size 4
+CPU execution time: 0.004142 seconds
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: laplacian
+Running filter size 5
+CPU execution time: 0.007206 seconds
+Saved processed image to kitten_226p_gray_laplacian.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sharpen
+Running filter size 3
+CPU execution time: 0.002111 seconds
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sharpen
+Running filter size 4
+CPU execution time: 0.003763 seconds
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image: kitten_226p_gray.png
+Filter: sharpen
+Running filter size 5
+CPU execution time: 0.005167 seconds
+Saved processed image to kitten_226p_gray_sharpen.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sobel
+Running filter size 3
+CPU execution time: 0.030337 seconds
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sobel
+Running filter size 4
+CPU execution time: 0.045500 seconds
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sobel
+Running filter size 5
+CPU execution time: 0.068659 seconds
+Saved processed image to kitten_720p_gray_sobel.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: laplacian
+Running filter size 3
+CPU execution time: 0.030520 seconds
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: laplacian
+Running filter size 4
+CPU execution time: 0.044396 seconds
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: laplacian
+Running filter size 5
+CPU execution time: 0.071644 seconds
+Saved processed image to kitten_720p_gray_laplacian.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sharpen
+Running filter size 3
+CPU execution time: 0.028348 seconds
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sharpen
+Running filter size 4
+CPU execution time: 0.044736 seconds
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image: kitten_720p_gray.png
+Filter: sharpen
+Running filter size 5
+CPU execution time: 0.062583 seconds
+Saved processed image to kitten_720p_gray_sharpen.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sobel
+Running filter size 3
+CPU execution time: 0.272643 seconds
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sobel
+Running filter size 4
+CPU execution time: 0.430159 seconds
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sobel
+Running filter size 5
+CPU execution time: 0.609515 seconds
+Saved processed image to kitten_2160p_gray_sobel.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: laplacian
+Running filter size 3
+CPU execution time: 0.289941 seconds
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: laplacian
+Running filter size 4
+CPU execution time: 0.420273 seconds
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: laplacian
+Running filter size 5
+CPU execution time: 0.605031 seconds
+Saved processed image to kitten_2160p_gray_laplacian.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sharpen
+Running filter size 3
+CPU execution time: 0.234471 seconds
+Saved processed image to kitten_2160p_gray_sharpen.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sharpen
+Running filter size 4
+CPU execution time: 0.373552 seconds
+Saved processed image to kitten_2160p_gray_sharpen.png
+------------------------------------
+Image: kitten_2160p_gray.jpg
+Filter: sharpen
+Running filter size 5
+CPU execution time: 0.573104 seconds
+Saved processed image to kitten_2160p_gray_sharpen.png
