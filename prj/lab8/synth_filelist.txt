@@ -1,0 +1,72 @@
+# ============================================================
+# Synthesis filelist for NetFPGA / Xilinx ISE
+# ============================================================
+# EXCLUDES simulation-only files: sim/glbl.v, sim/unisim_stub.v,
+#   sim/bram_sim.v, sim/network_processor_tb.v
+# EXCLUDES unused GPU wrappers: gpu/src/imem.v, gpu/src/dmem.v,
+#   gpu/src/gpu_wrapper.v, gpu/bram/dmem_bram.v
+# EXCLUDES gpu/src/MULT18X18S.v (provided by Xilinx UNISIM library)
+# EXCLUDES gpu/sim/*, gpu/tb/* (simulation/testbench only)
+#
+# Xilinx UNISIM library (FDCE, AND2, etc.) is automatic in ISE.
+# MULT18X18S is a built-in Xilinx primitive — do NOT include the
+# simulation model from gpu/src/.
+#
+# Xilinx IP cores (.xco) must be added to the ISE project separately:
+#   cpu/I_Mem_Dual.xco
+#   cpu/D_Mem.xco
+#   cpu/Reg_File_Dual.xco
+#   fifo/FIFO.xco
+# ============================================================
+
+# --- Top-level ---
+network_processor_top.v
+
+# --- CPU RTL ---
+cpu/ARM_Processor_4T.v
+cpu/ALU.v
+cpu/Condition_Unit.v
+cpu/Control_Unit.v
+cpu/Counter_2b.v
+cpu/EX_M_Reg.v
+cpu/Flag_Reg.v
+cpu/Flag_Reg_4.v
+cpu/ID_EX_Reg.v
+cpu/IF_ID_Reg.v
+cpu/M_WB_Reg.v
+cpu/Mux2_1_64b.v
+cpu/Mux4_1_7b.v
+cpu/PCL_7b.v
+cpu/PCL_7b_4.v
+cpu/Register_File_BRAM.v
+cpu/Sign_Extend_12to64.v
+cpu/busmerge4_2.v
+cpu/dff12.v
+cpu/dff2.v
+cpu/dff32.v
+cpu/dff4.v
+cpu/dff64.v
+
+# --- CPU BRAM wrappers (Xilinx CoreGen, black box for XST) ---
+cpu/I_Mem_Dual.v
+cpu/D_Mem.v
+cpu/Reg_File_Dual.v
+
+# --- FIFO ---
+fifo/convertible_fifo.v
+fifo/FIFO.v
+
+# --- GPU RTL ---
+gpu/src/gpu_top.v
+gpu/src/control_unit.v
+gpu/src/alu.v
+gpu/src/Register_file.v
+gpu/src/tensor_unit.v
+gpu/src/bf16_lane.v
+
+# --- GPU BRAM wrapper (Xilinx CoreGen, black box for XST) ---
+gpu/bram/imem_bram.v
+
+# --- NetFPGA ---
+gpu/src/user_data_path.v
+gpu/include/registers.v

@@ -1,0 +1,47 @@
+# Yosys STA — two-phase to strip parametric residue from ABC output.
+# Phase 1: synth + map + write netlist.
+# Phase 2: design -reset; read netlist + liberty; run sta (clean cells).
+
+verilog_defaults -add -I.
+verilog_defaults -add -Icpu -Icpu/core -Icpu/component -Icpu/alu -Icpu/mac
+verilog_defaults -add -Icpu/testmem -Icpu/testdsp
+verilog_defaults -add -Igpu -Igpu/core -Igpu/component -Igpu/arith
+verilog_defaults -add -Igpu/testmem -Igpu/testdsp
+verilog_defaults -add -Icp -Inetwork -Isoc
+
+# ===== Phase 1: synth + map =====
+read_verilog soc/soc.v
+hierarchy -top soc
+proc; opt
+memory -nomap
+opt
+techmap
+opt
+dfflibmap -liberty nangate45.lib
+# Delay-first ABC: drop -a (area bias) and -D,0 (target min delay). Let mapper pick X2/X4+.
+# &nf default (no -a, no -D) = delay-driven mapping with all drive strengths considered
+abc -liberty nangate45.lib -script "+strash;ifraig;scorr;dc2;dretime;strash;&get,-n;&dch,-f;&nf;&put;buffer,-N,12,-S,500;upsize,-D,500;dnsize,-D,500;upsize,-D,500;dnsize,-D,500"
+opt_clean
+
+# Blackbox memories + regfile + FIFO so write_verilog emits stubs
+# (OpenSTA chokes on behavioral always blocks from memory -nomap).
+blackbox test_d_mem test_i_mem test_gpu_dmem test_gpu_imem cp10_regfile regfile
+write_verilog -noattr -noparallelcase -blackboxes asic_nangate45_blackboxes.v
+write_verilog -noattr -noparallelcase asic_nangate45_mapped.v
+
+# ===== Phase 2: reset & reload for STA =====
+design -reset
+# Default read_liberty (no -lib / -wb) imports full module definitions with timing.
+read_liberty -ignore_miss_func -ignore_miss_dir nangate45.lib
+read_verilog asic_nangate45_mapped.v
+hierarchy -top soc -libdir .
+
+# Per-module STA
+tee -o sta_report.txt sta soc
+tee -a sta_report.txt sta cpu_mt
+tee -a sta_report.txt sta sm_core
+tee -a sta_report.txt sta tensor_core
+tee -a sta_report.txt sta alu
+tee -a sta_report.txt sta bf16fpu
+
+stat -liberty nangate45.lib

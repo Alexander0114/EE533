@@ -1,0 +1,39 @@
+# Yosys ASIC synthesis targeting Nangate 45nm Open Cell Library
+# This gives real cell areas, gate counts, and timing estimates
+
+verilog_defaults -add -I.
+verilog_defaults -add -Icpu -Icpu/core -Icpu/component -Icpu/alu -Icpu/mac
+verilog_defaults -add -Icpu/testmem -Icpu/testdsp
+verilog_defaults -add -Igpu -Igpu/core -Igpu/component -Igpu/arith
+verilog_defaults -add -Igpu/testmem -Igpu/testdsp
+verilog_defaults -add -Icp -Inetwork -Isoc
+
+read_verilog soc/soc.v
+
+# Elaborate
+hierarchy -top soc
+proc; opt
+
+# Memory handling - infer SRAM blocks (don't flatten to FFs)
+memory -nomap
+opt
+
+# Technology mapping to Nangate45
+techmap
+opt
+
+# Map FFs to library cells
+dfflibmap -liberty nangate45.lib
+
+# Map logic to library cells (ABC technology mapping)
+# Use -constr for area optimization, limit ABC to avoid OOM
+abc -liberty nangate45.lib -script "+strash;ifraig;scorr;dc2;dretime;strash;&get,-n;&dch,-f;&nf,-a,-D,1000;&put;buffer,-N,5,-S,750"
+
+# Clean up
+opt_clean
+
+# Print detailed statistics with cell areas
+stat -liberty nangate45.lib
+
+# Write netlist
+write_verilog asic_nangate45_netlist.v

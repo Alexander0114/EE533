@@ -1,0 +1,65 @@
+# Sim waveforms (lab8 had a 200GB+ one — never again)
+*.vcd
+*.fsdb
+*.vpd
+*.shm
+*.wlf
+*.evcd
+
+# Sim build artifacts
+simv
+simv.daidir/
+csrc/
+ucli.key
+DVEfiles/
+xsim.dir/
+*.jou
+*.wdb
+*.pb
+*.vvp
+.Xil/
+work/
+transcript
+yosys_log.txt
+*_log.txt
+
+# Synthesis / STA / asic_est run outputs
+*.log
+*.rpt
+*.db
+*.lef
+*.def
+*.spef
+*.sdc.tcl
+WORK/
+reports/
+*.cmd
+*.svf
+*.mr
+
+# Large drops
+*.zip
+*.tar
+*.tar.gz
+
+# Compiled / language
+*.o
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+
+# Editors / OS
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Already-its-own-repo
+prj/finalProject/
+
+# Secrets
+.env
+*.pem

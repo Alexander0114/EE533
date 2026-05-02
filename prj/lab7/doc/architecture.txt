@@ -1,0 +1,273 @@
+  GPU Architecture Walkthrough
+
+  Big Picture
+
+  This is a simple SIMD GPU core that operates on 64-bit registers, where each register holds 4 packed 16-bit lanes (either int16 or BFloat16). It executes one
+  instruction at a time through a multi-cycle FSM (no pipelining of instructions). The design targets a Xilinx FPGA (uses MULT18X18S hard multiplier).
+
+                    ┌──────────┐
+    program.hex ──► │   IMEM   │──── instruction ──┐
+                    │ (1024x32)│                    │
+                    └──────────┘                    ▼
+                         ▲              ┌──────────────────┐
+                         │ pc           │  CONTROL UNIT    │
+                         │              │  (FSM + decoder) │
+                         │              └──────┬───────────┘
+                         │                     │ control signals
+                    ┌────┴─────────────────────┼──────────────────┐
+                    │               gpu_top    ▼                  │
+                    │  ┌──────────┐  ┌─────┐  ┌───────────┐      │
+                    │  │ Reg File │─►│ ALU │  │ Tensor    │      │
+                    │  │ (32x64)  │─►│     │  │ Unit (x4  │      │
+                    │  │ 3R / 1W  │─►│     │  │ BF16 lane)│      │
+                    │  └──────────┘  └──┬──┘  └─────┬─────┘      │
+                    │       ▲           │           │             │
+                    │       │     ┌─────┴───────────┴──┐          │
+                    │       └─────┤  Writeback Mux     │          │
+                    │             │  (8 sources)       │          │
+                    │             └─────────┬──────────┘          │
+                    │                       │                     │
+                    │  ┌──────────┐         │                     │
+                    │  │   DMEM   │─────────┘                     │
+                    │  │(1024x64) │                               │
+                    │  └──────────┘                               │
+                    └─────────────────────────────────────────────┘
+
+  ---
+  Module-by-Module
+
+  1. imem.v — Instruction Memory
+
+  - 1024 x 32-bit synchronous ROM, loaded from program.hex
+  - Synchronous read: output appears one clock cycle after address is applied
+  - This latency is why the FSM needs both FETCH and FETCH2 stages
+
+  addr (pc) ──►  [mem array]  ──► data_reg (1-cycle delay) ──► instruction
+
+  2. dmem.v — Data Memory
+
+  - 1024 x 64-bit synchronous RAM, initialized from data.hex
+  - Synchronous read (1-cycle latency) and synchronous write
+  - Stores packed 64-bit vectors (4 x int16 or 4 x BF16)
+  - Write port uses rf_b (register port B) as write data
+
+  3. Register_file.v — Register File
+
+  - 32 registers x 64 bits each
+  - 3 read ports (A, B, C) — combinational (no latency)
+  - 1 write port — synchronous (writes on posedge clk)
+  - R0 is hardwired to zero: writes to address 0 are ignored (w_addr != 5'b0)
+  - R31 is initialized with thread_id during the INIT state
+
+  The 3 read ports allow the FMA instruction to read 3 source operands simultaneously (Ra, Rb, Rc).
+
+  4. alu.v — Integer SIMD ALU
+
+  - Purely combinational — no clock, result available immediately
+  - Slices the 64-bit inputs into 4 signed int16 lanes and operates in parallel:
+
+  ┌──────┬──────┬──────────────────────────────────────────────┐
+  │ func │  Op  │                 Description                  │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 0    │ VADD │ Per-lane add                                 │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 1    │ VSUB │ Per-lane subtract                            │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 2    │ VAND │ Bitwise AND (full 64-bit)                    │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 3    │ VOR  │ Bitwise OR                                   │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 4    │ VXOR │ Bitwise XOR                                  │
+  ├──────┼──────┼──────────────────────────────────────────────┤
+  │ 5    │ VSLT │ Per-lane signed less-than (result is 0 or 1) │
+  └──────┴──────┴──────────────────────────────────────────────┘
+
+  Lane indexing: operand[15:0] = lane 3, [31:16] = lane 2, [47:32] = lane 1, [63:48] = lane 0.
+
+  5. bf16_lane.v — Single BFloat16 Compute Lane
+
+  This is the most complex module. It implements a 4-stage pipelined FMA (fused multiply-add) for BFloat16 numbers.
+
+  BFloat16 format (same upper 16 bits as IEEE-754 float32):
+  [15] sign  |  [14:7] exponent (8-bit, bias=127)  |  [6:0] fraction (7-bit, implied 1.xxx)
+
+  Input muxing — all 3 operations reduce to a*b + c:
+
+  ┌─────────┬───────────┬──────────────┬────────┐
+  │ op_mode │ Operation │   mul_in_b   │ acc_in │
+  ├─────────┼───────────┼──────────────┼────────┤
+  │ 0 (ADD) │ a + b     │ 1.0 (0x3F80) │ src_b  │
+  ├─────────┼───────────┼──────────────┼────────┤
+  │ 1 (MUL) │ a * b     │ src_b        │ 0      │
+  ├─────────┼───────────┼──────────────┼────────┤
+  │ 2 (FMA) │ a*b + c   │ src_b        │ src_c  │
+  └─────────┴───────────┴──────────────┴────────┘
+
+  Pipeline stages:
+
+  Stage 1: MULT18X18S does mantissa multiplication (8x8 → 16 bits)
+           Latch sign, exponent sum, accumulate input
+                │
+  Stage 2: Normalize multiply product
+           Decompose accumulate operand, compare magnitudes
+           Determine which is bigger (for alignment)
+                │
+  Stage 3: Align smaller mantissa (shift right by exponent difference)
+           Add or subtract mantissas (depending on signs)
+                │
+  Stage 4: Normalize result (leading-one detection + shift)
+           Apply ReLU (clamp negatives to zero if relu_en)
+           Output final BF16 result
+
+  The bf16_normalize function handles leading-one detection — it finds where the most significant 1-bit is in the mantissa and adjusts the exponent accordingly. It
+  checks bits 8 down to 1 in priority order.
+
+  A valid_pipe shift register tracks when the result is ready (4 cycles after en).
+
+  6. MULT18X18S.v — Xilinx Hard Multiplier Primitive
+
+  - 18x18 signed registered multiplier — a Xilinx FPGA hardware primitive
+  - 1-cycle latency (result registered on posedge clk)
+  - The GPU uses it for the BF16 mantissa multiplication (only needs 8x8, but it's padded to 18x18)
+  - Has a global set/reset (GSR) for FPGA initialization
+
+  7. tensor_unit.v — Tensor Processing Unit
+
+  - Instantiates 4 parallel bf16_lane instances using generate
+  - Each lane independently computes its portion of the 64-bit vector
+  - Lane i processes bits [16*i +: 16] — so lane 0 = bits[15:0], lane 3 = bits[63:48]
+  - All 4 lanes receive the same op_mode and relu_en
+  - done signal comes from lane 0's output_ready (all lanes have identical latency)
+
+  operand_a[63:0] ──► ┌─ lane3 [63:48] ─► result[63:48] ─┐
+  operand_b[63:0] ──► ├─ lane2 [47:32] ─► result[47:32]  ├──► result[63:0]
+  operand_c[63:0] ──► ├─ lane1 [31:16] ─► result[31:16]  │
+                      └─ lane0 [15:0]  ─► result[15:0]  ─┘
+
+  8. control_unit.v — FSM + Instruction Decoder
+
+  This is the brain. It implements a multi-cycle FSM with 10 states:
+
+  IDLE ──► INIT ──► FETCH ──► FETCH2 ──► DECODE ──► EXECUTE ──► WRITEBACK ──► FETCH
+                                                        │              ▲
+                                                        ├─ TENSOR_WAIT─┘
+                                                        ├─ MEM_RD ─────┘
+                                                        └─ HALTED_ST
+
+  State-by-state:
+
+  ┌─────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │    State    │                                                   What Happens                                                   │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ IDLE        │ Waits for run signal                                                                                             │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ INIT        │ Writes thread_id into R31, then starts fetching                                                                  │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ FETCH       │ Captures instruction (imem output) into IR register                                                              │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ FETCH2      │ Waits 1 extra cycle for imem synchronous read to settle                                                          │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ DECODE      │ Sets register file read addresses from IR fields (ra, rb, rc). For stores/branches, reads rd via port B instead  │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ EXECUTE     │ The big case(opcode) — sets up ALU func, tensor start, writeback select, memory address, branch evaluation, etc. │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ TENSOR_WAIT │ Waits for tensor_done (4 cycles for the BF16 pipeline)                                                           │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ MEM_RD      │ Extra cycle for synchronous DMEM read latency                                                                    │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ WRITEBACK   │ Asserts rf_we to write result back to register file, increments PC                                               │
+  └─────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Instruction encoding (decoded from IR):
+  R-TYPE: [31:27]=opcode  [26:22]=rd  [21:17]=ra  [16:12]=rb  [11:7]=rc  [6:3]=func  [2:0]=mode
+  I-TYPE: [31:27]=opcode  [26:22]=rd  [21:17]=ra  [16:0]=imm17
+
+  Branch handling: Branches compare cmp_b (rd's value) against cmp_a (ra's value) combinationally. If taken, pc <= branch_target (pc + offset); if not taken, pc <= pc
+  + 1. No WRITEBACK needed — goes straight back to FETCH.
+
+  15 opcodes supported:
+
+  ┌─────────┬─────────────────┬─────────────────────────────┐
+  │ Opcode  │   Instruction   │      Writeback Source       │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x00    │ ALU ops         │ wb_sel=0 (ALU result)       │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x01    │ TENSOR ops      │ wb_sel=1 (tensor result)    │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x02    │ LD              │ wb_sel=2 (DMEM read)        │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x03    │ ST              │ no writeback                │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x04-07 │ BEQ/BNE/BLT/BGE │ no writeback (modifies PC)  │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x08    │ LUI             │ wb_sel=3 (immediate)        │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x09    │ ADDI            │ wb_sel=3 (immediate)        │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x0A    │ HALT            │ enters HALTED_ST            │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x0B    │ NOP             │ no writeback, PC+1          │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x0C    │ MOVI            │ wb_sel=3 (immediate)        │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x0D    │ RELU_INT        │ wb_sel=6 (relu_int result)  │
+  ├─────────┼─────────────────┼─────────────────────────────┤
+  │ 0x0E    │ VBCAST          │ wb_sel=7 (broadcast result) │
+  └─────────┴─────────────────┴─────────────────────────────┘
+
+  9. gpu_top.v — Top-Level Datapath
+
+  Wires everything together and contains the writeback mux — the central data selection:
+
+  case (wb_sel)
+      0: wb_data = alu_result;        // ALU integer ops
+      1: wb_data = tensor_result;     // BF16 tensor ops
+      2: wb_data = dmem_rdata;        // memory load
+      3: wb_data = imm_out;           // MOVI/ADDI/LUI
+      4: wb_data = {54'b0, pc + 1};   // (unused currently)
+      5: wb_data = imm_out;           // (alias)
+      6: wb_data = relu_int_result;   // per-lane max(0, x) for int16
+      7: wb_data = vbcast_result;     // lane broadcast
+  endcase
+
+  RELU_INT is implemented directly in gpu_top.v as simple combinational logic — if the sign bit of each int16 lane is set, output zero; otherwise pass through.
+
+  VBCAST is also combinational in gpu_top.v — it selects one 16-bit lane from rf_a (using tensor_op_mode as the lane index, latched from IR[2:0] by the control unit)
+  and replicates it to all 4 lanes.
+
+  ---
+  Instruction Lifecycle Example
+
+  Let's trace TENSOR_FMA R6, R4, R5, R4 through the whole machine:
+
+  1. FETCH (cycle N): IR <= imem[pc] captures the 32-bit instruction
+  2. FETCH2 (cycle N+1): wait for imem to settle
+  3. DECODE (cycle N+2): rf_rd_a <= 4 (R4), rf_rd_b <= 5 (R5), rf_rd_c <= 4 (R4). Register file reads are combinational, so rf_a, rf_b, rf_c become available
+  immediately
+  4. EXECUTE (cycle N+3): tensor_start <= 1, tensor_op_mode <= 2 (FMA), relu_en <= 0, wb_sel <= 1, rf_wr_addr <= 6. The tensor unit begins its 4-stage pipeline
+  5. TENSOR_WAIT (cycles N+4 to N+7): waits for tensor_done. The 4 BF16 lanes independently compute R4[i] * R5[i] + R4[i]
+  6. WRITEBACK (cycle N+8): rf_we <= 1, writes tensor_result (selected by wb_sel=1) to R6. pc <= pc + 1
+  7. FETCH (cycle N+9): begins next instruction
+
+  ---
+  Toolchain
+
+  The software toolchain mirrors the hardware:
+
+  - assembler.py — Two-pass assembler. Pass 1 collects labels; pass 2 encodes each instruction into the R-TYPE or I-TYPE 32-bit format. Outputs program.hex for
+  $readmemh.
+  - gen_data.py — Generates data.hex with test vectors packed into 64-bit words. Also computes expected results in Python (using BF16 precision simulation) and prints
+  Verilog localparam lines.
+  - test_all.asm — 17-test program covering every instruction type plus a 2x2 matrix multiply demo.
+  - gpu_top_tb.v — Testbench that runs the program, waits for HALT, then reads back DMEM results and compares against expected values.
+
+  ---
+  Key Design Decisions
+
+  1. Multi-cycle FSM, not pipelined — Each instruction completes fully before the next begins. Simple but slow (~6-9 cycles per instruction).
+  2. Synchronous memories — Both IMEM and DMEM use registered reads, requiring extra wait states (FETCH2, MEM_RD). This is typical for FPGA block RAM.
+  3. Unified FMA datapath — The BF16 lane computes everything as a*b+c by muxing inputs. ADD becomes a*1.0+b, MUL becomes a*b+0. This saves area (one datapath, not
+  three).
+  4. VBCAST uses tensor_op_mode — The lane selector is latched from IR[2:0] by the control unit into tensor_op_mode, rather than reading the live instruction wire.
+  This avoids timing issues since the IMEM output may shift during later FSM stages.
+  5. R0 = 0 — Writes to R0 are ignored, providing a constant zero register (common RISC convention).

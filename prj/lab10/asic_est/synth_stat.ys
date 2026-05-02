@@ -1,0 +1,22 @@
+# Yosys synthesis for statistics only (skip ABC to avoid OOM)
+
+verilog_defaults -add -I.
+verilog_defaults -add -Icpu -Icpu/core -Icpu/component -Icpu/alu -Icpu/mac
+verilog_defaults -add -Icpu/testmem -Icpu/testdsp
+verilog_defaults -add -Igpu -Igpu/core -Igpu/component -Igpu/arith
+verilog_defaults -add -Igpu/testmem -Igpu/testdsp
+verilog_defaults -add -Icp -Inetwork -Isoc
+
+read_verilog soc/soc.v
+
+# Elaborate and optimize (no ABC tech mapping)
+hierarchy -top soc
+proc
+opt
+memory
+opt
+techmap
+opt
+
+# Print statistics
+stat

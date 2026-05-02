@@ -1,0 +1,281 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+# --- Network Processor Register Map (Base Address 0x2000100) ---
+my $BASE = 0x2000100;
+# Software registers (host -> FPGA)
+my $REG_CPU_IMEM_ADDR = $BASE + 0x00;  # 4'h0
+my $REG_CPU_IMEM_DATA = $BASE + 0x04;  # 4'h1
+my $REG_GPU_IMEM_ADDR = $BASE + 0x08;  # 4'h2
+my $REG_GPU_IMEM_DATA = $BASE + 0x0c;  # 4'h3
+my $REG_SYS_CTRL      = $BASE + 0x10;  # 4'h4
+
+# Hardware registers (FPGA -> host, read-only)
+my $REG_GPU_PC         = $BASE + 0x14;  # 4'h5
+my $REG_CYCLE_COUNTS   = $BASE + 0x18;  # 4'h6
+my $REG_GPU_STATUS     = $BASE + 0x1c;  # 4'h7
+my $REG_CPU_PC         = $BASE + 0x20;  # 4'h8
+my $REG_FIFO_STATUS    = $BASE + 0x24;  # 4'h9
+my $REG_CPU_CTRL       = $BASE + 0x28;  # 4'hA
+
+# sys_ctrl bits
+my $CTRL_CPU_IMEM_WE = 0x1;  # bit 0
+my $CTRL_GPU_IMEM_WE = 0x2;  # bit 1
+my $CTRL_SYS_RESET   = 0x4;  # bit 2
+
+# --- Command Handler ---
+my $cmd = $ARGV[0] || "usage";
+
+if    ($cmd eq "reset")     { sys_reset(); }
+elsif ($cmd eq "run")       { sys_run(); }
+elsif ($cmd eq "stop")      { sys_stop(); }
+elsif ($cmd eq "status")    { show_status(); }
+elsif ($cmd eq "loadcpu")   { load_cpu_program($ARGV[1]); }
+elsif ($cmd eq "loadgpu")   { load_gpu_program($ARGV[1]); }
+elsif ($cmd eq "loadall")   { load_all($ARGV[1], $ARGV[2]); }
+elsif ($cmd eq "test")      { run_test(); }
+else                        { usage(); }
+
+# --- Helper Functions ---
+
+sub regwrite {
+    my ($addr, $val) = @_;
+    my $hex_addr = sprintf("0x%08x", $addr);
+    my $hex_val  = sprintf("0x%08x", $val);
+    system("regwrite $hex_addr $hex_val");
+}
+
+sub regread_val {
+    my ($addr) = @_;
+    my $hex_addr = sprintf("0x%08x", $addr);
+    my $output = `regread $hex_addr`;
+    if ($output =~ /:\s+(0x[0-9a-fA-F]+)/) {
+        return hex($1);
+    }
+    return 0;
+}
+
+# --- System Control ---
+
+sub sys_stop {
+    print "Holding system in reset...\n";
+    regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+}
+
+sub sys_run {
+    print "Releasing reset (sys_ctrl=0)...\n";
+    regwrite($REG_SYS_CTRL, 0x0);
+}
+
+sub sys_reset {
+    print "Toggling system reset...\n";
+    regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+    regwrite($REG_SYS_CTRL, 0x0);
+}
+
+sub show_status {
+    print "--- Network Processor Status ---\n";
+    my $ctrl    = regread_val($REG_SYS_CTRL);
+    my $gpu_pc  = regread_val($REG_GPU_PC);
+    my $cycles  = regread_val($REG_CYCLE_COUNTS);
+    my $status  = regread_val($REG_GPU_STATUS);
+    my $cpu_pc  = regread_val($REG_CPU_PC);
+    my $fifo    = regread_val($REG_FIFO_STATUS);
+    my $cpuctrl = regread_val($REG_CPU_CTRL);
+
+    my $gpu_halted = ($status >> 4) & 0x1;
+    my $gpu_state  = $status & 0xf;
+    my $pkt_ready  = ($fifo >> 17) & 0x1;
+    my $send_pkt   = ($fifo >> 16) & 0x1;
+    my $head_ptr   = ($fifo >> 8) & 0xff;
+    my $tail_ptr   = $fifo & 0xff;
+
+    printf "  SYS_CTRL:      0x%08x\n", $ctrl;
+    printf "  CPU PC:        %d\n", $cpu_pc;
+    printf "  GPU PC:        %d\n", $gpu_pc;
+    printf "  GPU Halted:    %d\n", $gpu_halted;
+    printf "  GPU State:     %d\n", $gpu_state;
+    printf "  Cycles:        %u\n", $cycles;
+    printf "  FIFO pkt_rdy:  %d\n", $pkt_ready;
+    printf "  FIFO send_pkt: %d\n", $send_pkt;
+    printf "  FIFO head_ptr: %d\n", $head_ptr;
+    printf "  FIFO tail_ptr: %d\n", $tail_ptr;
+    printf "  CPU ctrl:      0x%02x (gpu_rst=%d gpu_run=%d send=%d mode=%d pkt_rdy=%d)\n",
+        $cpuctrl,
+        ($cpuctrl >> 4) & 1, ($cpuctrl >> 3) & 1, ($cpuctrl >> 2) & 1,
+        ($cpuctrl >> 1) & 1, $cpuctrl & 1;
+}
+
+# --- Program Loading ---
+
+sub load_cpu_program {
+    my ($file) = @_;
+    die "Usage: ./netproc loadcpu <hex_file>\n" unless $file;
+    open(my $fh, "<", $file) or die "Could not open $file\n";
+
+    sys_stop();
+    print "Loading CPU instructions from $file...\n";
+
+    my $addr = 0;
+    while (my $line = <$fh>) {
+        chomp($line);
+        $line =~ s/\/\/.*//;
+        $line =~ s/^\s+|\s+$//g;
+        next if $line =~ /^\s*$/;
+        next if $line =~ /^@/;
+        $line =~ s/^0x//i;
+        my $data = hex($line);
+
+        regwrite($REG_CPU_IMEM_ADDR, $addr);
+        regwrite($REG_CPU_IMEM_DATA, $data);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET | $CTRL_CPU_IMEM_WE);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+
+        $addr++;
+    }
+    close($fh);
+    print "Loaded $addr CPU instructions.\n";
+}
+
+sub load_gpu_program {
+    my ($file) = @_;
+    die "Usage: ./netproc loadgpu <hex_file>\n" unless $file;
+    open(my $fh, "<", $file) or die "Could not open $file\n";
+
+    sys_stop();
+    print "Loading GPU instructions from $file...\n";
+
+    my $addr = 0;
+    while (my $line = <$fh>) {
+        chomp($line);
+        $line =~ s/\/\/.*//;
+        $line =~ s/^\s+|\s+$//g;
+        next if $line =~ /^\s*$/;
+        next if $line =~ /^@/;
+        $line =~ s/^0x//i;
+        my $data = hex($line);
+
+        regwrite($REG_GPU_IMEM_ADDR, $addr);
+        regwrite($REG_GPU_IMEM_DATA, $data);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET | $CTRL_GPU_IMEM_WE);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+
+        $addr++;
+    }
+    close($fh);
+    print "Loaded $addr GPU instructions.\n";
+}
+
+sub load_all {
+    my ($cpu_file, $gpu_file) = @_;
+    die "Usage: ./netproc loadall <cpu_hex> <gpu_hex>\n" unless ($cpu_file && $gpu_file);
+
+    load_cpu_program($cpu_file);
+    load_gpu_program($gpu_file);
+    print "Both programs loaded. Use './netproc run' to start.\n";
+}
+
+# --- Built-in Test ---
+
+sub run_test {
+    print "=== Network Processor Built-in Test ===\n\n";
+
+    # CPU program (25 instructions)
+    # ctrl bits: 0=packet_ready(r), 1=mode_select, 2=send_packet, 3=gpu_run, 4=gpu_rst
+    my @cpu_prog = (
+        0x90001001,  # 0:  ADDI R1, R0, 1
+        0x9610100C,  # 1:  LSLI R1, R1, 12          -> R1 = 0x1000
+        0x20102000,  # 2:  LW   R2, [R1, 0]         POLL
+        0x92203001,  # 3:  ANDI R3, R2, 1            check packet_ready
+        0x400C0008,  # 4:  BLE  POLL (2*4=8)
+        0x90002012,  # 5:  ADDI R2, R0, 18           mode_select=1, gpu_rst=1
+        0x30120000,  # 6:  SW   R2, [R1, 0]          (reset GPU)
+        0x90002002,  # 7:  ADDI R2, R0, 2            mode_select=1 (release gpu_rst)
+        0x30120000,  # 8:  SW   R2, [R1, 0]
+        0x9000200A,  # 9:  ADDI R2, R0, 10           mode_select=1, gpu_run=1
+        0x30120000,  # 10: SW   R2, [R1, 0]
+        0x20102000,  # 11: LW   R2, [R1, 0]         GPU_WAIT
+        0x92203020,  # 12: ANDI R3, R2, 32           check gpu_halted
+        0x400C002C,  # 13: BLE  GPU_WAIT (11*4=44)
+        0x90002002,  # 14: ADDI R2, R0, 2            mode_select=1
+        0x30120000,  # 15: SW   R2, [R1, 0]
+        0x90002006,  # 16: ADDI R2, R0, 6            mode_select=1, send_packet=1
+        0x30120000,  # 17: SW   R2, [R1, 0]
+        0x20102000,  # 18: LW   R2, [R1, 0]         WAIT_SEND
+        0x92203001,  # 19: ANDI R3, R2, 1            check packet_ready
+        0x94303001,  # 20: XORI R3, R3, 1            invert
+        0x400C0048,  # 21: BLE  WAIT_SEND (18*4=72)
+        0x90002000,  # 22: ADDI R2, R0, 0            clear ctrl
+        0x30120000,  # 23: SW   R2, [R1, 0]
+        0x40040008,  # 24: B    POLL (2*4=8)
+    );
+
+    # GPU program - passthrough (no modification)
+    my @gpu_prog = (
+        0x50000000,  # 0:  HALT
+    );
+
+    # Assert reset
+    sys_stop();
+
+    # Load CPU program
+    print "Loading CPU program (" . scalar(@cpu_prog) . " instructions)...\n";
+    for (my $i = 0; $i < scalar(@cpu_prog); $i++) {
+        regwrite($REG_CPU_IMEM_ADDR, $i);
+        regwrite($REG_CPU_IMEM_DATA, $cpu_prog[$i]);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET | $CTRL_CPU_IMEM_WE);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+    }
+
+    # Load GPU program
+    print "Loading GPU program (" . scalar(@gpu_prog) . " instructions)...\n";
+    for (my $i = 0; $i < scalar(@gpu_prog); $i++) {
+        regwrite($REG_GPU_IMEM_ADDR, $i);
+        regwrite($REG_GPU_IMEM_DATA, $gpu_prog[$i]);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET | $CTRL_GPU_IMEM_WE);
+        regwrite($REG_SYS_CTRL, $CTRL_SYS_RESET);
+    }
+
+    # Release reset
+    print "Releasing reset...\n";
+    regwrite($REG_SYS_CTRL, 0x0);
+
+    # Poll status
+    print "\nMonitoring (send a packet to trigger processing)...\n";
+    for (my $t = 0; $t < 100; $t++) {
+        select(undef, undef, undef, 0.2);  # sleep 200ms
+
+        my $cpu_pc = regread_val($REG_CPU_PC);
+        my $gpu_pc = regread_val($REG_GPU_PC);
+        my $cycles = regread_val($REG_CYCLE_COUNTS);
+        my $status = regread_val($REG_GPU_STATUS);
+        my $halted = ($status >> 4) & 0x1;
+        my $state  = $status & 0xf;
+
+        printf "  [%3d] CPU_PC=%3d  GPU_PC=%3d  state=%d  halted=%d  cycles=%u\n",
+            $t, $cpu_pc, $gpu_pc, $state, $halted, $cycles;
+
+        if ($halted) {
+            printf "\nGPU halted after %u cycles.\n", $cycles;
+            last;
+        }
+    }
+
+    show_status();
+}
+
+# --- Usage ---
+
+sub usage {
+    print "Usage: ./netproc <command> [args]\n";
+    print "Commands:\n";
+    print "  stop                       - Hold system in reset\n";
+    print "  run                        - Release reset (start CPU)\n";
+    print "  reset                      - Toggle reset\n";
+    print "  status                     - Show CPU/GPU PC, FIFO state, ctrl bits\n";
+    print "  loadcpu  <hex_file>        - Load CPU program from hex file\n";
+    print "  loadgpu  <hex_file>        - Load GPU program from hex file\n";
+    print "  loadall  <cpu_hex> <gpu_hex> - Load both programs\n";
+    print "  test                       - Run built-in test (embedded programs)\n";
+}

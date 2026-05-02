@@ -1,0 +1,114 @@
+❯ But how will the output pipeline know when to read?
+
+● Good question. Looking at the current design, there's a gap — out_rd_en is an input driven
+  by the downstream NetFPGA module, but there's no "I have data ready to send" signal going
+  out.
+
+  In a standard NetFPGA user data path, there are actually two more signals that the current
+  convertible_fifo is missing:
+
+  out_wr        OUT   "I have a valid word on out_data, read it"
+  out_rdy       IN    "Downstream is ready to accept"
+
+  Standard NetFPGA Output Handshake
+
+  clk          ___/‾‾‾\___/‾‾‾\___/‾‾‾\___/‾‾‾\___
+  out_wr       ___/‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾\_______   ← "I have data"
+  out_rdy      ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾   ← "go ahead"
+  out_data     ---< hdr   >< payload >< tail >------
+
+  Both sides must agree: data transfers when out_wr && out_rdy on the same cycle.
+
+  What's Missing
+
+  The current convertible_fifo uses out_rd_en as if the downstream just pulls whenever it
+  wants. But the downstream doesn't know when a processed packet is ready. It needs a signal
+  from your module saying "I have a packet to send."
+
+  Let me check what user_data_path.v does — that's the NetFPGA glue module.
+
+● Read 1 file (ctrl+o to expand)
+
+● Now let me check gpu_wrapper.v to see how it interfaces.
+
+● Read 1 file (ctrl+o to expand)
+
+● This is a critical discovery. Here's the answer to your question:
+
+  How NetFPGA Controls the FIFO — Actual Protocol
+
+  The real NetFPGA protocol is push-based, not pull-based. Looking at user_data_path.v and
+  gpu_wrapper.v:
+
+  The Actual Signals (from user_data_path.v)
+
+  in_data[63:0]   IN    64-bit data (NOT 72 — ctrl is separate!)
+  in_ctrl[7:0]    IN    8-bit control word
+  in_wr           IN    "I have valid data this cycle"
+  in_rdy          OUT   "I can accept data" (backpressure)
+
+  out_data[63:0]  OUT   64-bit data
+  out_ctrl[7:0]   OUT   8-bit control word
+  out_wr          OUT   "I have valid data for you"  ← THIS IS THE ANSWER
+  out_rdy         IN    "Downstream can accept"
+
+  The Protocol
+
+  Input (receiving packets):
+  Data transfers when:  in_wr == 1  AND  in_rdy == 1
+  Your module asserts in_rdy when it has space.
+
+  Output (sending packets):
+  Data transfers when:  out_wr == 1  AND  out_rdy == 1
+  Your module asserts out_wr when it has data to send.
+  Downstream asserts out_rdy when it can accept.
+
+  What gpu_wrapper.v Currently Does
+
+  Lines 76-79 reveal something important — it's a passthrough!
+
+  assign out_data = in_data;
+  assign out_ctrl = in_ctrl;
+  assign out_wr   = in_wr;
+  assign in_rdy   = out_rdy;
+
+  The GPU wrapper doesn't touch packets at all right now. It just passes them through the
+  pipeline and uses the register interface (generic_regs) for the host PC to load programs
+  and data into the GPU via software registers.
+
+  What Needs to Change for Option 3
+
+  The convertible_fifo uses the wrong signal names and bundles ctrl+data into 72 bits. For
+  the real NetFPGA pipeline, you need an output FSM that drains the FIFO after processing:
+
+  IDLE:
+    out_wr = 0
+    wait for cpu_packet_done → go to SEND
+
+  SEND:
+    out_wr = 1
+    out_data = fifo_bram[head_ptr][63:0]
+    out_ctrl = fifo_bram[head_ptr][71:64]
+    if (out_rdy):
+      head_ptr++
+      if (head_ptr == tail_ptr) → go to IDLE
+
+  Updated Architecture
+
+  NetFPGA pipeline                              NetFPGA pipeline
+     in_data/ctrl/wr ──►┌──────────────┐◄── out_rdy
+     in_rdy ◄───────────│  Input FSM   │───► out_data/ctrl/wr
+                         │  (write to   │
+                         │   FIFO)      │    Output FSM
+                         └──────┬───────┘    (drain FIFO
+                                │             after GPU done)
+                          FIFO BRAM
+                         Port A │ Port B
+                           │         │
+                          CPU       GPU
+
+  So there's a missing piece — you need a small output controller FSM that reads from the
+  FIFO and drives out_wr/out_data/out_ctrl with proper handshaking. The current
+  convertible_fifo assumes someone externally drives out_rd_en, but in the real pipeline your
+   module must be the one asserting out_wr.
+

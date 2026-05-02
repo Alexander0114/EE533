@@ -1,0 +1,139 @@
+////////////////////////////////////////////////////////////////////////////////
+// Copyright (c) 1995-2008 Xilinx, Inc.  All rights reserved.
+////////////////////////////////////////////////////////////////////////////////
+//   ____  ____ 
+//  /   /\/   / 
+// /___/  \  /    Vendor: Xilinx 
+// \   \   \/     Version : 10.1
+//  \   \         Application : sch2verilog
+//  /   /         Filename : Mux_2_1_16b.vf
+// /___/   /\     Timestamp : 02/18/2026 19:45:34
+// \   \  /  \ 
+//  \___\/\___\ 
+//
+//Command: C:\Xilinx\10.1\ISE\bin\nt\unwrapped\sch2verilog.exe -intstyle ise -family virtex2p -w "C:/Documents and Settings/student/Desktop/ARM_Processor/Mux_2_1_16b.sch" Mux_2_1_16b.vf
+//Design Name: Mux_2_1_16b
+//Device: virtex2p
+//Purpose:
+//    This verilog netlist is translated from an ECS schematic.It can be 
+//    synthesized and simulated, but it should not be modified. 
+//
+`timescale 1ns / 1ps
+
+module M2_1_MXILINX_Mux_2_1_16b(D0, 
+                                D1, 
+                                S0, 
+                                O);
+
+    input D0;
+    input D1;
+    input S0;
+   output O;
+   
+   wire M0;
+   wire M1;
+   
+   AND2B1 I_36_7 (.I0(S0), 
+                  .I1(D0), 
+                  .O(M0));
+   OR2 I_36_8 (.I0(M1), 
+               .I1(M0), 
+               .O(O));
+   AND2 I_36_9 (.I0(D1), 
+                .I1(S0), 
+                .O(M1));
+endmodule
+`timescale 1ns / 1ps
+
+module Mux_2_1_16b(D0, 
+                   D1, 
+                   S, 
+                   O);
+
+    input [15:0] D0;
+    input [15:0] D1;
+    input S;
+   output [15:0] O;
+   
+   
+   M2_1_MXILINX_Mux_2_1_16b XLXI_89 (.D0(D0[0]), 
+                                     .D1(D1[0]), 
+                                     .S0(S), 
+                                     .O(O[0]));
+   // synthesis attribute HU_SET of XLXI_89 is "XLXI_89_0"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_90 (.D0(D0[4]), 
+                                     .D1(D1[4]), 
+                                     .S0(S), 
+                                     .O(O[4]));
+   // synthesis attribute HU_SET of XLXI_90 is "XLXI_90_1"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_91 (.D0(D0[8]), 
+                                     .D1(D1[8]), 
+                                     .S0(S), 
+                                     .O(O[8]));
+   // synthesis attribute HU_SET of XLXI_91 is "XLXI_91_2"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_92 (.D0(D0[12]), 
+                                     .D1(D1[12]), 
+                                     .S0(S), 
+                                     .O(O[12]));
+   // synthesis attribute HU_SET of XLXI_92 is "XLXI_92_3"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_93 (.D0(D0[1]), 
+                                     .D1(D1[1]), 
+                                     .S0(S), 
+                                     .O(O[1]));
+   // synthesis attribute HU_SET of XLXI_93 is "XLXI_93_4"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_94 (.D0(D0[5]), 
+                                     .D1(D1[5]), 
+                                     .S0(S), 
+                                     .O(O[5]));
+   // synthesis attribute HU_SET of XLXI_94 is "XLXI_94_5"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_95 (.D0(D0[9]), 
+                                     .D1(D1[9]), 
+                                     .S0(S), 
+                                     .O(O[9]));
+   // synthesis attribute HU_SET of XLXI_95 is "XLXI_95_6"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_96 (.D0(D0[13]), 
+                                     .D1(D1[13]), 
+                                     .S0(S), 
+                                     .O(O[13]));
+   // synthesis attribute HU_SET of XLXI_96 is "XLXI_96_7"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_97 (.D0(D0[2]), 
+                                     .D1(D1[2]), 
+                                     .S0(S), 
+                                     .O(O[2]));
+   // synthesis attribute HU_SET of XLXI_97 is "XLXI_97_8"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_98 (.D0(D0[6]), 
+                                     .D1(D1[6]), 
+                                     .S0(S), 
+                                     .O(O[6]));
+   // synthesis attribute HU_SET of XLXI_98 is "XLXI_98_9"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_99 (.D0(D0[10]), 
+                                     .D1(D1[10]), 
+                                     .S0(S), 
+                                     .O(O[10]));
+   // synthesis attribute HU_SET of XLXI_99 is "XLXI_99_10"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_100 (.D0(D0[14]), 
+                                      .D1(D1[14]), 
+                                      .S0(S), 
+                                      .O(O[14]));
+   // synthesis attribute HU_SET of XLXI_100 is "XLXI_100_11"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_101 (.D0(D0[3]), 
+                                      .D1(D1[3]), 
+                                      .S0(S), 
+                                      .O(O[3]));
+   // synthesis attribute HU_SET of XLXI_101 is "XLXI_101_12"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_102 (.D0(D0[7]), 
+                                      .D1(D1[7]), 
+                                      .S0(S), 
+                                      .O(O[7]));
+   // synthesis attribute HU_SET of XLXI_102 is "XLXI_102_13"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_103 (.D0(D0[11]), 
+                                      .D1(D1[11]), 
+                                      .S0(S), 
+                                      .O(O[11]));
+   // synthesis attribute HU_SET of XLXI_103 is "XLXI_103_14"
+   M2_1_MXILINX_Mux_2_1_16b XLXI_104 (.D0(D0[15]), 
+                                      .D1(D1[15]), 
+                                      .S0(S), 
+                                      .O(O[15]));
+   // synthesis attribute HU_SET of XLXI_104 is "XLXI_104_15"
+endmodule

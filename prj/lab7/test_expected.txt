@@ -1,0 +1,66 @@
+============================================================
+  GPU Kernel Verification — Expected Results
+============================================================
+
+No DMEM pre-loading needed. All test data is loaded directly
+into registers using MOVI + VBCAST, then computed and stored.
+
+TEST SUMMARY
+------------
+Test  Kernel         Inputs                          Output Addr
+----  ------         ------                          -----------
+ 1    vector_add     R2={3,3,3,3}  R4={5,5,5,5}     dmem[0]
+ 2    vector_sub     R2={20,20,20,20} R4={7,7,7,7}  dmem[1]
+ 3    bf16_mul       R2={2.0} R4={3.0}               dmem[2]
+ 4    bf16_fma       R2={2.0} R4={3.0} R6={1.0}      dmem[3]
+ 5    relu_int16     R2={-5,-5,-5,-5}                 dmem[4]
+ 6    relu_bf16      R2={-2.0,-2.0,-2.0,-2.0}         dmem[5]
+
+
+EXPECTED OUTPUTS
+----------------
+
+dmem[0] — vector_add:    0008000800080008
+  int16: {3+5, 3+5, 3+5, 3+5} = {8, 8, 8, 8}
+
+dmem[1] — vector_sub:    000D000D000D000D
+  int16: {20-7, 20-7, 20-7, 20-7} = {13, 13, 13, 13}
+
+dmem[2] — bf16_mul:      40C040C040C040C0
+  bf16: {2.0*3.0, ...} = {6.0, 6.0, 6.0, 6.0}
+
+dmem[3] — bf16_fma:      40E040E040E040E0
+  bf16: {2.0*3.0+1.0, ...} = {7.0, 7.0, 7.0, 7.0}
+
+dmem[4] — relu_int16:    0000000000000000
+  int16: max(0, {-5,-5,-5,-5}) = {0, 0, 0, 0}
+
+dmem[5] — relu_bf16:     0000000000000000
+  bf16: ReLU({-2.0,-2.0,-2.0,-2.0}) = {0, 0, 0, 0}
+
+
+FPGA TEST PROCEDURE
+-------------------
+$ cd /mnt/e/sharedir/lab7/netfpga/projects/lab7/sw/
+
+1. Stop GPU and load program:
+   ./gpureg stop
+   ./gpureg load <path>/test_program.hex
+
+2. Run:
+   ./gpureg run
+
+3. Check status:
+   ./gpureg status
+   → Should show "halted"
+
+4. Read results:
+   ./gpureg read 0   → expect 0008000800080008  (vector_add)
+   ./gpureg read 1   → expect 000D000D000D000D  (vector_sub)
+   ./gpureg read 2   → expect 40C040C040C040C0  (bf16_mul)
+   ./gpureg read 3   → expect 40E040E040E040E0  (bf16_fma)
+   ./gpureg read 4   → expect 0000000000000000  (relu_int16)
+   ./gpureg read 5   → expect 0000000000000000  (relu_bf16)
+
+   Or dump all at once:
+   ./gpureg dump 0 6

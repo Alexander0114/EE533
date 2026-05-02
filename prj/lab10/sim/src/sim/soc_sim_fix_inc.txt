@@ -1,0 +1,1 @@
+-I ../rtl_fix -I ../rtl_fix/cpu -I ../rtl_fix/cpu/alu -I ../rtl_fix/cpu/component -I ../rtl_fix/cpu/core  -I ../rtl_fix/cpu/mac  -I ../rtl_fix/cp  -I ../rtl_fix/cpu/testmem -I ../rtl_fix/gpu -I ../rtl_fix/gpu/arith -I ../rtl_fix/gpu/component -I ../rtl_fix/gpu/core -I ../rtl_fix/gpu/testmem -I ../rtl_fix/network -I ../rtl_fix/soc -I ../rtl_fix/gpu/testdsp

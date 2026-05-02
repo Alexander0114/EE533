@@ -1,0 +1,24 @@
+// CPU Program: poll packet, run GPU, send packet
+90001001  // 0:  ADDI R1, R0, 1
+9610100C  // 1:  LSLI R1, R1, 12  -> R1 = 0x1000
+20102000  // 2:  LW   R2, [R1, 0]  POLL
+92203001  // 3:  ANDI R3, R2, 1    check packet_ready
+400C0008  // 4:  BLE  POLL (8)
+90002002  // 5:  ADDI R2, R0, 2    mode_select=1
+30120000  // 6:  SW   R2, [R1, 0]
+9000200A  // 7:  ADDI R2, R0, 10   mode_select=1, gpu_run=1
+30120000  // 8:  SW   R2, [R1, 0]
+20102000  // 9:  LW   R2, [R1, 0]  GPU_WAIT
+92203020  // 10: ANDI R3, R2, 32   check gpu_halted
+400C0024  // 11: BLE  GPU_WAIT (36)
+90002002  // 12: ADDI R2, R0, 2    mode_select=1
+30120000  // 13: SW   R2, [R1, 0]
+90002006  // 14: ADDI R2, R0, 6    mode_select=1, send_packet=1
+30120000  // 15: SW   R2, [R1, 0]
+20102000  // 16: LW   R2, [R1, 0]  WAIT_SEND
+92203001  // 17: ANDI R3, R2, 1    check packet_ready
+94303001  // 18: XORI R3, R3, 1    invert
+400C0040  // 19: BLE  WAIT_SEND (64)
+90002000  // 20: ADDI R2, R0, 0    clear ctrl
+30120000  // 21: SW   R2, [R1, 0]
+40040008  // 22: B    POLL (8)

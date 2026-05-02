@@ -1,0 +1,28 @@
+  sw/gpureg supports:
+
+  ┌──────────────────┬────────────────────────────────────────────────┐
+  │     Command      │                  Description                   │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ stop             │ Hold GPU in reset                              │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ run              │ Start GPU (run=1, reset=0)                     │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ reset            │ Toggle reset → run                             │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ status           │ Show PC, cycle count, halted, state            │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ load <file>      │ Load .hex into IMEM (one 32-bit word per line) │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ loaddata <file>  │ Load .hex into DMEM (one 64-bit word per line) │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ read <addr>      │ Read one 64-bit DMEM word                      │
+  ├──────────────────┼────────────────────────────────────────────────┤
+  │ dump [start] [n] │ Dump n DMEM words                              │
+  └──────────────────┴────────────────────────────────────────────────┘
+
+  Typical workflow:
+  ./gpureg load program.hex      # loads IMEM while GPU in reset
+  ./gpureg loaddata data.hex     # loads DMEM (optional)
+  ./gpureg run                   # starts execution
+  ./gpureg status                # poll until halted=1
+  ./gpureg dump 0 32             # read results from DMEM

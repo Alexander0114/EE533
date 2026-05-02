@@ -1,0 +1,104 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+# --- CPU Register Map (Base Address 0x2000200) ---
+my $BASE = 0x2000200;
+my $REG_IMEM_ADDR    = $BASE + 0x00;
+my $REG_IMEM_DATA    = $BASE + 0x04;
+my $REG_DMEM_ADDR    = $BASE + 0x08;
+my $REG_DMEM_DATA_WR = $BASE + 0x0c;
+my $REG_CPU_CTRL     = $BASE + 0x10;
+my $REG_CURRENT_PC   = $BASE + 0x14;
+my $REG_DMEM_DATA_RD = $BASE + 0x18;
+my $REG_CYCLE_COUNT  = $BASE + 0x1c;
+
+# --- Command Handler ---
+my $cmd = $ARGV[0] || "usage";
+
+if    ($cmd eq "reset")   { cpu_reset(); }
+elsif ($cmd eq "run")     { cpu_run(); }
+elsif ($cmd eq "stop")    { cpu_stop(); }
+elsif ($cmd eq "status")  { cpu_status(); }
+elsif ($cmd eq "load")    { load_program($ARGV[1]); }
+elsif ($cmd eq "read")    { read_dmem($ARGV[1]); }
+else                      { usage(); }
+
+# --- Helper Functions ---
+
+sub regwrite {
+    my ($addr, $val) = @_;
+    my $hex_addr = sprintf("0x%08x", $addr);
+    my $hex_val  = sprintf("0x%08x", $val);
+    system("regwrite $hex_addr $hex_val");
+}
+
+sub cpu_stop {
+    print "Stopping CPU (Reset = 1)...\n";
+    regwrite($REG_CPU_CTRL, 0x1);
+}
+
+sub cpu_run {
+    print "Starting CPU (Reset = 0)...\n";
+    regwrite($REG_CPU_CTRL, 0x0);
+}
+
+sub cpu_reset {
+    print "Toggling CPU Reset...\n";
+    regwrite($REG_CPU_CTRL, 0x1);
+    regwrite($REG_CPU_CTRL, 0x0);
+}
+
+sub cpu_status {
+    print "--- CPU Status ---\n";
+    system(sprintf("regread 0x%08x", $REG_CURRENT_PC));
+    system(sprintf("regread 0x%08x", $REG_CYCLE_COUNT));
+}
+
+sub load_program {
+    my ($file) = @_;
+    die "Usage: ./cpureg load <hex_file>\n" unless $file;
+    open(my $fh, "<", $file) or die "Could not open $file\n";
+    
+    cpu_stop();
+    print "Loading instructions from $file...\n";
+    
+    my $addr = 0;
+    while (my $line = <$fh>) {
+        chomp($line);
+        next if $line =~ /^\s*$/; # Skip empty lines
+        $line =~ s/^0x//;         # Remove 0x if present
+        my $data = hex($line);
+        
+        # 1. Set Address
+        regwrite($REG_IMEM_ADDR, $addr);
+        # 2. Set Data
+        regwrite($REG_IMEM_DATA, $data);
+        # 3. Pulse Write Enable (Bit 1 of Control)
+        regwrite($REG_CPU_CTRL, 0x3); # Reset=1, IMEM_WE=1
+        regwrite($REG_CPU_CTRL, 0x1); # Reset=1, IMEM_WE=0
+        
+        $addr++;
+    }
+    close($fh);
+    print "Loaded $addr instructions.\n";
+    cpu_run();
+}
+
+sub read_dmem {
+    my ($addr) = @_;
+    die "Usage: ./cpureg read <addr>\n" unless defined $addr;
+    regwrite($REG_DMEM_ADDR, $addr);
+    print "DMEM[$addr]: ";
+    system(sprintf("regread 0x%08x", $REG_DMEM_DATA_RD));
+}
+
+sub usage {
+    print "Usage: ./cpureg <command> [args]\n";
+    print "Commands:\n";
+    print "  stop           - Hold CPU in reset\n";
+    print "  run            - Release CPU from reset\n";
+    print "  status         - Show PC and Cycle Count\n";
+    print "  load <file>    - Load a .hex file into IMEM\n";
+    print "  read <addr>    - Read a 32-bit word from DMEM\n";
+}

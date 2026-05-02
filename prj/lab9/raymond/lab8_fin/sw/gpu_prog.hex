@@ -1,0 +1,13 @@
+// GPU Program: VADD +1 to FIFO words 1-5, then HALT
+60000000  // 0:  MOVI  R0, 0
+48400001  // 1:  ADDI  R1, R0, 1
+70420003  // 2:  VBCAST R1, R1, lane 3
+60800001  // 3:  MOVI  R2, 1        loop start addr
+60C00006  // 4:  MOVI  R3, 6        loop end addr
+38860006  // 5:  BGE   R2, R3, +6 (-> 11)
+11040000  // 6:  LD    R4, [R2, 0]
+01081000  // 7:  VADD  R4, R4, R1
+19040000  // 8:  ST    R4, [R2, 0]
+48840001  // 9:  ADDI  R2, R2, 1
+2001FFFB  // 10: BEQ   R0, R0, -5 (-> 5)
+50000000  // 11: HALT

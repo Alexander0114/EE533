@@ -1,0 +1,603 @@
+================================================================================
+                    CUSTOM GPU PROCESSOR — DESIGN DOCUMENT
+                         EE533 Lab 7 — NetFPGA Platform
+================================================================================
+
+1. OVERVIEW
+================================================================================
+
+This document describes the architecture of a custom standalone GPU processor
+designed for the NetFPGA platform (Xilinx Spartan-3, ISE 10.1). The GPU
+supports SIMD operations on 4 packed Int16 or 4 packed BFloat16 elements per
+64-bit register, targeting ANN/AI acceleration workloads.
+
+Key features:
+  - 32-bit instruction set with 14 opcodes
+  - 32 x 64-bit general-purpose register file (R0 hardwired to zero)
+  - 4-lane Int16 SIMD ALU (VADD, VSUB, VAND, VOR, VXOR, VSLT)
+  - 4-lane BFloat16 tensor unit with unified FMA datapath (ADD, MUL, FMA)
+  - Optional per-lane ReLU activation (both Int16 and BF16)
+  - Harvard architecture: separate instruction memory and data memory
+  - Multi-cycle FSM controller (non-pipelined execution)
+  - Thread ID support via special register R31
+
+Target: NetFPGA v2.1 board, Xilinx Spartan-3 FPGA, ISE 10.1 toolchain.
+
+
+2. TOP-LEVEL BLOCK DIAGRAM
+================================================================================
+
+                         External Inputs
+                    clk  rst  run  thread_id[9:0]
+                     |    |    |       |
+                     v    v    v       v
+              +==============================+
+              |        control_unit           |
+              |        (ctrl_inst)            |
+              |   Multi-cycle FSM Controller  |
+              |   8 states, 14 opcodes        |
+              +==============================+
+                |   |   |   |   |   |   |
+                |   |   |   |   |   |   +---> halted, state[2:0]
+                |   |   |   |   |   |         debug_pc[9:0], debug_ir[31:0]
+                |   |   |   |   |   |
+       pc[9:0] |   |   |   |   |   | wb_sel[2:0]
+                v   |   |   |   |   |
+         +--------+ |   |   |   |   |
+         |  imem   | |   |   |   |   |
+         |1024x32  | |   |   |   |   |
+         |  async  | |   |   |   |   |
+         +----+---+  |   |   |   |   |
+              |      |   |   |   |   |
+    instr[31:0]      |   |   |   |   |
+              |      |   |   |   |   |
+              v      |   |   |   |   |
+         (back to    |   |   |   |   |
+         ctrl_inst)  |   |   |   |   |
+                     |   |   |   |   |
+         rf_rd_a/b/c |   |   |   |   |
+         rf_wr_addr  |   |   |   |   |
+         rf_we       |   |   |   |   |
+                     v   |   |   |   |
+         +==============+|   |   |   |
+         | Register_file||   |   |   |
+         |   (rf_inst)  ||   |   |   |
+         | 32x64-bit    ||   |   |   |
+         | 3R / 1W      ||   |   |   |
+         | R0=0, R31=TID||   |   |   |
+         +==+===+===+==+|   |   |   |
+            |   |   |   |   |   |   |
+          rf_a rf_b rf_c|   |   |   |
+            |   |   |   |   |   |   |
+            v   v   |   |   |   |   |
+         +------+   |   |   |   |   |
+    +--->| alu  |   |   |   |   |   |
+    |    |4-lane|   |   |   |   |   |
+    |    |int16 |   |   |   |   |   |  alu_func[3:0]
+    |    +--+---+   |   |   |   |   |<------+
+    |       |       |   |   |   |   |       |
+    |   alu_result  |   |   |   |   |       |
+    |       |       v   v   v   |   |       |
+    |       |  +==============+ |   |       |
+    |       |  | tensor_unit  | |   |       |
+    |       |  | (tensor_inst)| |   |       |
+    |       |  | 4x bf16_lane | |   | tensor_start
+    |       |  | 4-cyc pipe   |<----+ tensor_op_mode[2:0]
+    |       |  +------+-------+ |   | tensor_relu_en
+    |       |         |         |   |
+    |       |   tensor_result   |   |
+    |       |   tensor_done     |   |
+    |       |         |         |   |
+    |       |         |    rf_b |   |
+    |       |         |      |  |   |
+    |       |         |      v  |   |
+    |       |         | +======+==+ |
+    |       |         | |   dmem   | |  dmem_we
+    |       |         | | 1024x64  |<+  dmem_addr[9:0]
+    |       |         | | sync wr  | |
+    |       |         | | async rd | |
+    |       |         | +----+-----+ |
+    |       |         |      |       |
+    |       |         | dmem_rdata   |
+    |       |         |      |       |
+    |  rf_a |         |      |  imm_out[63:0]
+    |    |  |         |      |       |
+    |    v  |         |      |       |
+    | +--------+      |      |       |
+    | |ReLU INT|      |      |       |
+    | |per-lane|      |      |       |
+    | |max(0,x)|      |      |       |
+    | +---+----+      |      |       |
+    |     |           |      |       |
+    |  relu_int_result|      |       |
+    |     |           |      |       |
+    |     v           v      v       v
+    |  +=====================================+
+    |  |         Writeback Mux               |
+    |  |  wb_sel: 0=ALU    1=Tensor          |
+    |  |          2=DMEM   3=Immediate       |
+    |  |          4=PC+1   5=LUI             |
+    |  |          6=ReLU_INT                  |
+    |  +================+====================+
+    |                    |
+    |              rf_w_data[63:0]
+    |                    |
+    +--------------------+
+    (back to Register File write port)
+
+
+3. MODULE HIERARCHY
+================================================================================
+
+gpu_top                              — Top-level integration module
+  |
+  +-- imem (imem_inst)               — Instruction Memory
+  |     1024 x 32-bit, asynchronous read
+  |     Initialized via $readmemh("program.hex")
+  |
+  +-- Register_file (rf_inst)        — General-Purpose Register File
+  |     32 x 64-bit registers
+  |     3 combinational read ports (A, B, C)
+  |     1 synchronous write port
+  |     R0 hardwired to zero
+  |     R31 loaded with thread_id during INIT state
+  |
+  +-- alu (alu_inst)                 — Int16 SIMD ALU
+  |     Purely combinational
+  |     4 packed signed Int16 lanes
+  |     6 operations: VADD, VSUB, VAND, VOR, VXOR, VSLT
+  |
+  +-- tensor_unit (tensor_inst)      — BFloat16 Tensor Processing Unit
+  |     |  4 parallel BF16 compute lanes
+  |     |  Pipelined: 4-cycle latency per operation
+  |     |  Unified FMA datapath: all ops computed as a*b + c
+  |     |  Optional ReLU activation on output
+  |     |
+  |     +-- bf16_lane[0] (LANE[0])   — BF16 Lane (bits [15:0])
+  |     |     +-- MULT18X18S         — Xilinx signed 18x18 multiplier
+  |     |
+  |     +-- bf16_lane[1] (LANE[1])   — BF16 Lane (bits [31:16])
+  |     |     +-- MULT18X18S
+  |     |
+  |     +-- bf16_lane[2] (LANE[2])   — BF16 Lane (bits [47:32])
+  |     |     +-- MULT18X18S
+  |     |
+  |     +-- bf16_lane[3] (LANE[3])   — BF16 Lane (bits [63:48])
+  |           +-- MULT18X18S
+  |
+  +-- dmem (dmem_inst)               — Data Memory
+  |     1024 x 64-bit, asynchronous read, synchronous write
+  |     Initialized via $readmemh("data.hex")
+  |
+  +-- ReLU INT (combinational)       — Integer ReLU (in gpu_top.v)
+  |     Per-lane max(0, x) on 4 packed Int16 values
+  |     Checks sign bit [15] of each 16-bit lane
+  |
+  +-- Writeback Mux (combinational)  — Write-back Data Selector (in gpu_top.v)
+  |     7-input mux controlled by wb_sel[2:0]
+  |
+  +-- control_unit (ctrl_inst)       — Multi-cycle FSM Controller
+        8 states, 14 instruction opcodes
+        Generates all control signals
+
+
+4. INSTRUCTION SET ARCHITECTURE (ISA)
+================================================================================
+
+4.1 Instruction Formats (32-bit)
+---------------------------------
+
+  R-TYPE:  [opcode(5)][rd(5)][ra(5)][rb(5)][rc(5)][func(4)][mode(3)]
+  I-TYPE:  [opcode(5)][rd(5)][ra(5)][imm17(17)]
+  M-TYPE:  [opcode(5)][rd(5)][ra(5)][offset17(17)]  (same as I-TYPE)
+
+  Bit positions:
+    opcode : [31:27]
+    rd     : [26:22]
+    ra     : [21:17]
+    rb     : [16:12]   (R-TYPE only)
+    rc     : [11:7]    (R-TYPE only)
+    func   : [6:3]     (R-TYPE only)
+    mode   : [2:0]     (R-TYPE only)
+    imm17  : [16:0]    (I-TYPE / M-TYPE)
+
+4.2 Opcodes
+-----------
+
+  Opcode  Hex   Mnemonic    Fmt  Description                    Cycles
+  ------  ----  ----------  ---  ----------------------------   ------
+  00000   0x00  ALU         R    Int16 SIMD operation           4
+  00001   0x01  TENSOR      R    BF16 operation (FMA datapath)  8
+  00010   0x02  LD          M    Rd = dmem[Ra + offset]         4
+  00011   0x03  ST          M    dmem[Ra + offset] = Rd         4
+  00100   0x04  BEQ         I    Branch if Rd == Ra             3
+  00101   0x05  BNE         I    Branch if Rd != Ra             3
+  00110   0x06  BLT         I    Branch if Rd < Ra (signed)     3
+  00111   0x07  BGE         I    Branch if Rd >= Ra (signed)    3
+  01000   0x08  LUI         I    Rd = {imm17, 47'b0}           4
+  01001   0x09  ADDI        I    Rd = Ra + sign_ext(imm17)      4
+  01010   0x0A  HALT        -    Stop execution                 3
+  01011   0x0B  NOP         -    No operation                   3
+  01100   0x0C  MOVI        I    Rd = sign_ext(imm17)           4
+  01101   0x0D  RELU_INT    R    Rd = max(0, Ra) per int16 lane 4
+
+  Cycle count: FETCH + DECODE + EXECUTE + WRITEBACK (TENSOR adds 4 wait).
+
+4.3 ALU func Codes (opcode = 0x00)
+-----------------------------------
+
+  func   Mnemonic  Description
+  ----   --------  ---------------------------
+  0000   VADD      4-lane Int16 add
+  0001   VSUB      4-lane Int16 subtract
+  0010   VAND      Bitwise AND (64-bit)
+  0011   VOR       Bitwise OR  (64-bit)
+  0100   VXOR      Bitwise XOR (64-bit)
+  0101   VSLT      Set-less-than (signed, per lane)
+
+4.4 Tensor op_mode Codes (opcode = 0x01)
+-----------------------------------------
+
+  mode   Mnemonic  Operation
+  ----   --------  ----------------------------
+  000    ADD       Rd = Ra + Rb  (via a*1.0 + b)
+  001    MUL       Rd = Ra * Rb  (via a*b + 0)
+  010    FMA       Rd = Ra * Rb + Rc
+
+  func[0] = relu_en: apply ReLU (max(0, x)) on output.
+
+
+5. MODULE INTERFACES
+================================================================================
+
+5.1 gpu_top — Top-Level Module
+-------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  rst             input  1      Synchronous reset (active high)
+  run             input  1      Start execution (1-cycle pulse)
+  thread_id       input  10     Thread ID (written to R31)
+  halted          output 1      Execution halted (HALT reached)
+  debug_pc        output 10     Current program counter
+  debug_ir        output 32     Current instruction register
+  debug_state     output 3      Current FSM state
+
+5.2 control_unit — FSM Controller
+----------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  rst             input  1      Synchronous reset
+  run             input  1      Start signal
+  instruction     input  32     Current instruction from IMEM
+  tensor_done     input  1      Tensor unit completion flag
+  thread_id       input  10     Thread ID for R31 init
+  cmp_a           input  64     Register read port A (for branch)
+  cmp_b           input  64     Register read port B (for branch)
+  pc              output 10     Program counter
+  rf_rd_a         output 5      Register file read address A
+  rf_rd_b         output 5      Register file read address B
+  rf_rd_c         output 5      Register file read address C
+  rf_wr_addr      output 5      Register file write address
+  rf_we           output 1      Register file write enable
+  alu_func        output 4      ALU function select
+  tensor_start    output 1      Tensor unit start pulse
+  tensor_op_mode  output 3      Tensor operation mode
+  tensor_relu_en  output 1      Tensor ReLU enable
+  dmem_we         output 1      Data memory write enable
+  wb_sel          output 3      Writeback mux select
+  imm_out         output 64     Immediate value output
+  dmem_addr       output 10     Data memory address
+  halted          output 1      Halt status flag
+  state           output 3      Current FSM state
+
+5.3 Register_file — 32x64-bit Register File
+---------------------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  rst             input  1      Synchronous reset
+  we              input  1      Write enable
+  w_addr          input  5      Write address (writes to R0 ignored)
+  w_data          input  64     Write data
+  r_addr_a        input  5      Read address port A
+  r_data_a        output 64     Read data port A (combinational)
+  r_addr_b        input  5      Read address port B
+  r_data_b        output 64     Read data port B (combinational)
+  r_addr_c        input  5      Read address port C
+  r_data_c        output 64     Read data port C (combinational)
+
+5.4 alu — Int16 SIMD ALU
+--------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  operand_a       input  64     Operand A (4 packed Int16)
+  operand_b       input  64     Operand B (4 packed Int16)
+  func            input  4      Operation select
+  result          output 64     Result (4 packed Int16)
+
+5.5 tensor_unit — 4-Lane BFloat16 Tensor Unit
+-----------------------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  rst             input  1      Synchronous reset
+  start           input  1      Start pulse (1 cycle)
+  operand_a       input  64     Operand A (4 packed BF16)
+  operand_b       input  64     Operand B (4 packed BF16)
+  operand_c       input  64     Operand C (4 packed BF16, for FMA)
+  op_mode         input  3      Operation mode (0=ADD, 1=MUL, 2=FMA)
+  relu_en         input  1      ReLU enable
+  result          output 64     Result (4 packed BF16)
+  done            output 1      Operation complete flag
+
+5.6 bf16_lane — Single BFloat16 Compute Lane
+----------------------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  rst             input  1      Synchronous reset
+  en              input  1      Enable / start signal
+  src_a           input  16     BF16 operand A
+  src_b           input  16     BF16 operand B
+  src_c           input  16     BF16 operand C (FMA accumulate)
+  op_mode         input  3      Operation mode
+  relu_en         input  1      ReLU enable
+  result          output 16     BF16 result
+  output_ready    output 1      Result valid flag
+
+  Parameter: PIPE_DEPTH = 4 (pipeline stages)
+
+  Internal pipeline stages:
+    Stage 1: MULT18X18S multiply + pipeline control signals
+    Stage 2: Normalize product + magnitude compare for accumulate
+    Stage 3: Alignment shift + mantissa add/subtract
+    Stage 4: Normalization + ReLU + output register
+
+5.7 imem — Instruction Memory
+-------------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  addr            input  10     Read address (from PC)
+  data            output 32     Instruction word (combinational)
+
+  Size: 1024 x 32-bit. Async read. Init: $readmemh("program.hex").
+
+5.8 dmem — Data Memory
+------------------------
+
+  Port            Dir    Width  Description
+  --------------- ------ -----  --------------------------------
+  clk             input  1      System clock
+  we              input  1      Write enable
+  addr            input  10     Read/write address
+  w_data          input  64     Write data (from register file port B)
+  r_data          output 64     Read data (combinational)
+
+  Size: 1024 x 64-bit. Async read. Sync write. Init: $readmemh("data.hex").
+
+
+6. CONTROL UNIT FSM
+================================================================================
+
+6.1 State Diagram
+------------------
+
+  IDLE (0) --[run]--> INIT (1) --> FETCH (2) --> DECODE (3) --> EXECUTE (4)
+                                     ^                             |
+                                     |          +------------------+
+                                     |          |                  |
+                                     |     (branch/NOP)      (tensor op)
+                                     |          |                  |
+                                     |          v                  v
+                                     |     (back to FETCH)   TENSOR_WAIT (5)
+                                     |                             |
+                                     |                       [tensor_done]
+                                     |                             |
+                                     +-------- WRITEBACK (6) <-----+
+                                                   |
+                                              (HALT detected)
+                                                   |
+                                                   v
+                                              HALTED (7)
+
+6.2 State Descriptions
+-----------------------
+
+  State         Code  Actions
+  ------------- ----  --------------------------------------------------
+  IDLE          0     Wait for 'run' signal
+  INIT          1     Write thread_id to R31 via immediate path
+  FETCH         2     Latch instruction from IMEM into IR
+  DECODE        3     Set register read addresses; route rd to port B
+                      for ST/branch instructions
+  EXECUTE       4     Dispatch based on opcode:
+                        ALU:      set func, wb_sel=0, go to WRITEBACK
+                        TENSOR:   pulse tensor_start, go to TENSOR_WAIT
+                        LD:       compute addr, wb_sel=2, go to WRITEBACK
+                        ST:       compute addr, assert dmem_we, go to WB
+                        Branches: evaluate condition, update PC, go to FETCH
+                        MOVI:     sign-extend imm17, wb_sel=3, go to WB
+                        ADDI:     Ra + imm_sext, wb_sel=3, go to WRITEBACK
+                        LUI:      {imm17, 47'b0}, wb_sel=3, go to WRITEBACK
+                        HALT:     set halted, go to HALTED
+                        NOP:      increment PC, go to FETCH
+                        RELU_INT: wb_sel=6, go to WRITEBACK
+  TENSOR_WAIT   5     Wait for tensor_done signal from tensor unit
+  WRITEBACK     6     Assert rf_we (except for ST), increment PC,
+                      go to FETCH
+  HALTED        7     Hold halted=1, stay in this state
+
+6.3 Writeback Mux Select Values
+---------------------------------
+
+  wb_sel  Source           Used by
+  ------  ---------------  ----------------------------
+  0       ALU result       ALU instructions
+  1       Tensor result    TENSOR instructions
+  2       DMEM read data   LD instruction
+  3       Immediate        MOVI, ADDI, INIT (thread_id)
+  4       PC + 1           (reserved for JAL/CALL)
+  5       LUI immediate    LUI instruction
+  6       ReLU INT result  RELU_INT instruction
+
+
+7. DATA FORMATS
+================================================================================
+
+7.1 Int16 SIMD (4 lanes packed in 64 bits)
+--------------------------------------------
+
+  Bit [63:48]  Bit [47:32]  Bit [31:16]  Bit [15:0]
+  Lane 3       Lane 2       Lane 1       Lane 0
+
+  Each lane: 16-bit signed integer (two's complement).
+
+7.2 BFloat16 (4 lanes packed in 64 bits)
+------------------------------------------
+
+  Same lane packing as Int16:
+  Bit [63:48]  Bit [47:32]  Bit [31:16]  Bit [15:0]
+  Lane 3       Lane 2       Lane 1       Lane 0
+
+  Each lane: 16-bit BFloat16 format:
+    Bit [15]    = Sign (1 bit)
+    Bit [14:7]  = Exponent (8 bits, bias 127)
+    Bit [6:0]   = Fraction (7 bits, implicit leading 1)
+
+  BF16 encoding examples:
+    1.0  = 0x3F80     -1.0 = 0xBF80
+    1.5  = 0x3FC0      2.0 = 0x4000
+    3.0  = 0x4040      6.0 = 0x40C0
+    0.0  = 0x0000
+
+
+8. DATAPATH CONNECTIONS
+================================================================================
+
+  Signal Path                      Connection
+  ------------------------------- -----------------------------------------------
+  PC --> IMEM.addr                 Program counter drives instruction fetch
+  IMEM.data --> ctrl.instruction   Instruction word to control unit
+  ctrl --> RF read addrs           Control unit sets rf_rd_a, rf_rd_b, rf_rd_c
+  RF.r_data_a --> ALU.operand_a    Register port A to ALU input A
+  RF.r_data_b --> ALU.operand_b    Register port A to ALU input B
+  RF.r_data_a --> tensor.operand_a Register port A to tensor input A
+  RF.r_data_b --> tensor.operand_b Register port B to tensor input B
+  RF.r_data_c --> tensor.operand_c Register port C to tensor input C
+  RF.r_data_a --> ctrl.cmp_a       Register port A for branch comparison
+  RF.r_data_b --> ctrl.cmp_b       Register port B for branch comparison
+  RF.r_data_b --> DMEM.w_data      Register port B provides store data
+  ctrl.dmem_addr --> DMEM.addr     Control unit computes memory address
+  WB_mux.out --> RF.w_data         Writeback mux output to register write port
+
+  Store Data Path: For ST instructions, the control unit routes rd (the
+  source register) to rf_rd_b, so that rf_b carries the data to be stored.
+  This value flows directly to DMEM.w_data.
+
+
+9. BF16 COMPUTE LANE PIPELINE DETAIL
+================================================================================
+
+  The bf16_lane uses a unified FMA datapath where all operations are computed
+  as result = a * b + c, with input muxing to select operands:
+
+    ADD (mode=0): mul_in_b = 1.0 (0x3F80), acc_in = src_b   --> a*1.0 + b
+    MUL (mode=1): mul_in_b = src_b,         acc_in = 0       --> a*b + 0
+    FMA (mode=2): mul_in_b = src_b,         acc_in = src_c   --> a*b + c
+
+  Pipeline stages (PIPE_DEPTH = 4):
+
+  Stage 1 (MULT18X18S + pipeline regs):
+    - Xilinx MULT18X18S performs 18x18 signed multiply (1-cycle latency)
+    - Pipeline registers capture: sign_mul, relu_en, mul_zero, exp_sum, acc_in
+
+  Stage 2 (Normalize product + compare):
+    - Normalize the 16-bit product from multiplier
+    - Decompose accumulate operand (sign, exponent, mantissa)
+    - Compare magnitudes to determine big/small operands
+    - Pipeline registers capture: big/small exp/mant/sign, exp_diff, eff_sub
+
+  Stage 3 (Align + add/subtract):
+    - Shift smaller mantissa right by exponent difference
+    - Add or subtract aligned mantissas based on effective subtraction flag
+    - Pipeline registers capture: acc_sum, big_exp, big_sign
+
+  Stage 4 (Normalize + ReLU + output):
+    - Normalize accumulated result using leading-one detection
+    - Apply ReLU: if relu_en and sign bit is set, clamp to zero
+    - Handle zero/denormal cases
+    - Output register captures final BF16 result
+
+
+10. FILE LIST
+================================================================================
+
+  File               Lines  Description
+  ---------------    -----  -----------------------------------------------
+  gpu_top.v          113    Top-level integration module
+  control_unit.v     271    Multi-cycle FSM controller
+  Register_file.v    52     32x64-bit register file (3R/1W)
+  alu.v              28     4-lane Int16 SIMD ALU (combinational)
+  tensor_unit.v      37     4x bf16_lane wrapper
+  bf16_lane.v        248    Single BF16 compute lane (4-stage pipeline)
+  MULT18X18S.v       ---    Xilinx signed 18x18 multiplier (from NetFPGA)
+  imem.v             13     Instruction memory (1024x32, behavioral)
+  dmem.v             20     Data memory (1024x64, behavioral)
+  gpu_top_tb.v       180    Integration testbench
+  bf16_lane_tb.v     ---    BF16 lane unit testbench
+  program.hex        15     Test program (hand-assembled)
+  data.hex           6      Test data (Int16 + BF16 vectors)
+
+
+11. VERIFICATION RESULTS
+================================================================================
+
+11.1 BF16 Lane Unit Test
+--------------------------
+  19/19 test cases passed
+  Coverage: MUL (5 tests), ADD (6 tests), FMA (4 tests), ReLU (4 tests)
+
+11.2 GPU Integration Test
+--------------------------
+  Test program: 15 instructions, 75 clock cycles to completion
+
+  Test 1 — Int16 VADD:
+    Input A:  {1, 2, 3, 4}      dmem[0] = 0x0001000200030004
+    Input B:  {10, 20, 30, 40}  dmem[1] = 0x000A0014001E0028
+    Result:   {11, 22, 33, 44}  dmem[2] = 0x000B00160021002C  [PASS]
+
+  Test 2 — BF16 MUL:
+    Input X:  {2.0, 1.5, 1.0, 3.0}  dmem[3] = 0x40003FC03F804040
+    Input Y:  {3.0, 2.0, 2.0, 2.0}  dmem[4] = 0x4040400040004000
+    Result:   {6.0, 3.0, 2.0, 6.0}  dmem[5] = 0x40C04040400040C0  [PASS]
+
+
+12. RESOURCE ESTIMATES (Spartan-3)
+================================================================================
+
+  Module           Slices  Block RAMs  MULT18X18
+  ---------------  ------  ----------  ---------
+  Register File    ~1024   0           0
+  ALU              ~128    0           0
+  Tensor Unit      ~400    0           4
+  Control Unit     ~200    0           0
+  IMEM             0       2           0
+  DMEM             0       4           0
+  ReLU INT         ~16     0           0
+  Misc logic       ~32     0           0
+  ---------------  ------  ----------  ---------
+  TOTAL (est.)     ~1800   6           4
+
+
+================================================================================
+                         END OF DESIGN DOCUMENT
+================================================================================

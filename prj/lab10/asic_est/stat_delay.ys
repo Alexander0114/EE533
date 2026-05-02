@@ -1,0 +1,20 @@
+# Stat-only: synth + delay-tuned ABC + stat. No STA, no reset.
+
+verilog_defaults -add -I.
+verilog_defaults -add -Icpu -Icpu/core -Icpu/component -Icpu/alu -Icpu/mac
+verilog_defaults -add -Icpu/testmem -Icpu/testdsp
+verilog_defaults -add -Igpu -Igpu/core -Igpu/component -Igpu/arith
+verilog_defaults -add -Igpu/testmem -Igpu/testdsp
+verilog_defaults -add -Icp -Inetwork -Isoc
+
+read_verilog soc/soc.v
+hierarchy -top soc
+proc; opt
+memory -nomap
+opt
+techmap
+opt
+dfflibmap -liberty nangate45.lib
+abc -liberty nangate45.lib -script "+strash;ifraig;scorr;dc2;dretime;strash;&get,-n;&dch,-f;&nf,-a,-D,200;&put;buffer,-N,16,-S,750"
+opt_clean
+stat -liberty nangate45.lib -top soc

@@ -1,0 +1,124 @@
+  Instruction Formats
+
+  R-TYPE: [opcode(5)][rd(5)][ra(5)][rb(5)][rc(5)][func(4)][mode(3)]  — 32 bits
+  I-TYPE: [opcode(5)][rd(5)][ra(5)][imm17(17)]                       — 32 bits
+
+  ---
+  ALU Instructions (R-TYPE, opcode = 0x00)
+
+  All operate on 4 packed int16 lanes in parallel.
+
+  ┌─────────────────┬──────┬─────────────────────────────────┬───────────────────────────────┐
+  │    Mnemonic     │ func │            Operation            │          Description          │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VADD Rd, Ra, Rb │ 0    │ Rd[i] = Ra[i] + Rb[i]           │ Vector int16 addition         │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VSUB Rd, Ra, Rb │ 1    │ Rd[i] = Ra[i] - Rb[i]           │ Vector int16 subtraction      │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VAND Rd, Ra, Rb │ 2    │ Rd = Ra & Rb                    │ Bitwise AND (full 64-bit)     │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VOR  Rd, Ra, Rb │ 3    │ Rd = Ra | Rb                    │ Bitwise OR (full 64-bit)      │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VXOR Rd, Ra, Rb │ 4    │ Rd = Ra ^ Rb                    │ Bitwise XOR (full 64-bit)     │
+  ├─────────────────┼──────┼─────────────────────────────────┼───────────────────────────────┤
+  │ VSLT Rd, Ra, Rb │ 5    │ Rd[i] = (Ra[i] < Rb[i]) ? 1 : 0 │ Signed per-lane set-less-than │
+  └─────────────────┴──────┴─────────────────────────────────┴───────────────────────────────┘
+
+  Encoding: {opcode=00000, rd, ra, rb, rc=0, func, mode=0}
+
+  ---
+  Tensor Instructions (R-TYPE, opcode = 0x01)
+
+  All operate on 4 packed BFloat16 lanes via the tensor unit. Multi-cycle (waits for tensor_done).
+
+  ┌────────────────────────────────┬──────┬───────────────────┬─────────────────────────────────────────────┐
+  │            Mnemonic            │ mode │ func[0] (relu_en) │                  Operation                  │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_ADD Rd, Ra, Rb          │ 0    │ 0                 │ Rd[i] = bf16(Ra[i] + Rb[i])                 │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_MUL Rd, Ra, Rb          │ 1    │ 0                 │ Rd[i] = bf16(Ra[i] * Rb[i])                 │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_FMA Rd, Ra, Rb, Rc      │ 2    │ 0                 │ Rd[i] = bf16(Ra[i] * Rb[i] + Rc[i])         │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_ADD_RELU Rd, Ra, Rb     │ 0    │ 1                 │ Rd[i] = max(0, bf16(Ra[i] + Rb[i]))         │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_MUL_RELU Rd, Ra, Rb     │ 1    │ 1                 │ Rd[i] = max(0, bf16(Ra[i] * Rb[i]))         │
+  ├────────────────────────────────┼──────┼───────────────────┼─────────────────────────────────────────────┤
+  │ TENSOR_FMA_RELU Rd, Ra, Rb, Rc │ 2    │ 1                 │ Rd[i] = max(0, bf16(Ra[i] * Rb[i] + Rc[i])) │
+  └────────────────────────────────┴──────┴───────────────────┴─────────────────────────────────────────────┘
+
+  Encoding: {opcode=00001, rd, ra, rb, rc, func=relu_en, mode}
+
+  ---
+  RELU_INT (R-TYPE, opcode = 0x0D)
+
+  RELU_INT Rd, Ra
+  - Operation: Rd[i] = (Ra[i] < 0) ? 0 : Ra[i] per int16 lane
+  - Encoding: {opcode=01101, rd, ra, rb=0, rc=0, func=0, mode=0}
+
+  ---
+  VBCAST (R-TYPE, opcode = 0x0E)
+
+  VBCAST Rd, Ra, lane
+  - Operation: Rd = {Ra[lane], Ra[lane], Ra[lane], Ra[lane]}
+    Broadcasts one 16-bit lane of Ra across all 4 lanes of Rd.
+  - Lane mapping: lane 0 → bits[63:48], lane 1 → [47:32], lane 2 → [31:16], lane 3 → [15:0]
+  - Encoding: {opcode=01110, rd, ra, rb=0, rc=0, func=0, mode=lane}
+  - lane (mode field) must be 0..3
+
+  ---
+  Memory Instructions (I-TYPE)
+
+  ┌────────────────┬────────┬─────────────────────────────────────────────────────────┐
+  │    Mnemonic    │ Opcode │                        Operation                        │
+  ├────────────────┼────────┼─────────────────────────────────────────────────────────┤
+  │ LD Rd, Ra, imm │ 0x02   │ Rd = dmem[Ra[9:0] + sign_ext(imm)]                      │
+  ├────────────────┼────────┼─────────────────────────────────────────────────────────┤
+  │ ST Rd, Ra, imm │ 0x03   │ dmem[Ra[9:0] + sign_ext(imm)] = Rb (Rd read via port B) │
+  └────────────────┴────────┴─────────────────────────────────────────────────────────┘
+
+  - Loads/stores full 64-bit packed register
+  - Address = lower 10 bits of Ra + sign-extended imm17
+  - Encoding: {opcode, rd, ra, imm17}
+
+  ---
+  Immediate Instructions (I-TYPE)
+
+  ┌──────────────────┬────────┬─────────────────────────────────────────────┐
+  │     Mnemonic     │ Opcode │                  Operation                  │
+  ├──────────────────┼────────┼─────────────────────────────────────────────┤
+  │ MOVI Rd, imm     │ 0x0C   │ Rd = sign_ext(imm17)                        │
+  ├──────────────────┼────────┼─────────────────────────────────────────────┤
+  │ ADDI Rd, Ra, imm │ 0x09   │ Rd = Ra + sign_ext(imm17) (full 64-bit add) │
+  ├──────────────────┼────────┼─────────────────────────────────────────────┤
+  │ LUI Rd, imm      │ 0x08   │ Rd = {imm17, 47'b0} (load upper bits)       │
+  └──────────────────┴────────┴─────────────────────────────────────────────┘
+
+  - MOVI: ra field is 0, loads sign-extended 17-bit immediate
+  - ADDI: adds 64-bit register value + sign-extended immediate
+  - LUI: places 17-bit immediate into bits [63:47], zeros below
+  - Encoding: {opcode, rd, ra, imm17}
+
+  ---
+  Control Instructions
+
+  ┌──────────┬────────┬────────┬────────────────────────────────────────┐
+  │ Mnemonic │ Opcode │  Type  │               Operation                │
+  ├──────────┼────────┼────────┼────────────────────────────────────────┤
+  │ NOP      │ 0x0B   │ I-TYPE │ No operation, advances PC+1            │
+  ├──────────┼────────┼────────┼────────────────────────────────────────┤
+  │ HALT     │ 0x0A   │ I-TYPE │ Stops execution, asserts halted signal │
+  └──────────┴────────┴────────┴────────────────────────────────────────┘
+
+  - Encoding: {opcode, 0, 0, 0} (all fields zero)
+
+  ---
+  Pipeline States
+
+  Each instruction goes through the FSM: FETCH → FETCH2 → DECODE → EXECUTE → [TENSOR_WAIT/MEM_RD] → WRITEBACK → FETCH
+
+  - ALU/MOVI/ADDI/LUI/RELU_INT/VBCAST: EXECUTE → WRITEBACK
+  - TENSOR: EXECUTE → TENSOR_WAIT (until done) → WRITEBACK
+  - LD: EXECUTE → MEM_RD → WRITEBACK
+  - ST: EXECUTE (writes memory) → WRITEBACK (no register write)
+  - NOP/HALT: EXECUTE → FETCH (NOP) or HALTED (HALT)

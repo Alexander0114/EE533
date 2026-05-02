@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nf:module xmlns:nf="http://www.NetFPGA.org/NF2_register_system" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.NetFPGA.org/NF2_register_system NF2_register_system.xsd ">
+	<nf:name>gpu</nf:name>
+	<nf:prefix>gpu</nf:prefix>
+	<nf:location>udp</nf:location>
+	<nf:description>Network Processor registers (CPU+GPU)</nf:description>
+	<nf:blocksize>64</nf:blocksize>
+	<nf:registers>
+                <!-- Software Registers (Host PC -> FPGA) -->
+		<nf:register>
+		  <nf:name>cpu_imem_addr</nf:name>
+			<nf:description>CPU instruction memory write address</nf:description>
+			<nf:type>generic_software32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>cpu_imem_data</nf:name>
+			<nf:description>CPU instruction memory write data (32-bit)</nf:description>
+			<nf:type>generic_software32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>gpu_imem_addr</nf:name>
+			<nf:description>GPU instruction memory write address [9:0]</nf:description>
+			<nf:type>generic_software32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>gpu_imem_data</nf:name>
+			<nf:description>GPU instruction memory write data (32-bit)</nf:description>
+			<nf:type>generic_software32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>sys_ctrl</nf:name>
+			<nf:description>bit0: cpu_imem_we, bit1: gpu_imem_we, bit2: sys_reset</nf:description>
+			<nf:type>generic_software32</nf:type>
+		</nf:register>
+
+                <!-- Hardware Registers (FPGA -> Host PC, read-only) -->
+		<nf:register>
+		  <nf:name>gpu_pc</nf:name>
+			<nf:description>GPU program counter [9:0]</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>cycle_counts</nf:name>
+			<nf:description>Clock cycle counter</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>gpu_status</nf:name>
+			<nf:description>GPU status: bit4=halted, bits[3:0]=state</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>cpu_pc</nf:name>
+			<nf:description>CPU program counter [8:0]</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>fifo_status</nf:name>
+			<nf:description>FIFO: bit17=pkt_ready, bit16=send_pkt, [15:8]=head_ptr, [7:0]=tail_ptr</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+		<nf:register>
+		  <nf:name>cpu_ctrl</nf:name>
+			<nf:description>CPU ctrl: bit4=gpu_rst, bit3=gpu_run, bit2=send_pkt, bit1=mode_sel, bit0=pkt_ready</nf:description>
+			<nf:type>generic_hardware32</nf:type>
+		</nf:register>
+	</nf:registers>
+</nf:module>

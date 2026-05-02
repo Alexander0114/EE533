@@ -1,0 +1,36 @@
+# Yosys ASIC synthesis script for SoC area/power estimation
+# Synthesizes Jeremy's SoC RTL to generic gate-level netlist
+
+# Read all Verilog files with include paths
+verilog_defaults -add -I.
+verilog_defaults -add -Icpu
+verilog_defaults -add -Icpu/core
+verilog_defaults -add -Icpu/component
+verilog_defaults -add -Icpu/alu
+verilog_defaults -add -Icpu/mac
+verilog_defaults -add -Icpu/testmem
+verilog_defaults -add -Icpu/testdsp
+verilog_defaults -add -Igpu
+verilog_defaults -add -Igpu/core
+verilog_defaults -add -Igpu/component
+verilog_defaults -add -Igpu/arith
+verilog_defaults -add -Igpu/testmem
+verilog_defaults -add -Igpu/testdsp
+verilog_defaults -add -Icp
+verilog_defaults -add -Inetwork
+verilog_defaults -add -Isoc
+
+# Read top-level (pulls in everything via includes)
+read_verilog soc/soc.v
+
+# Synthesize to generic gates
+synth -top soc -flatten
+
+# Print statistics (gate count, wire count, memory bits)
+stat
+
+# Also print detailed cell breakdown
+stat -tech cmos
+
+# Write gate-level netlist for inspection
+write_verilog asic_netlist.v
